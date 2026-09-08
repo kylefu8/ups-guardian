@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">UPS Guardian</title>
+  <desc id="desc">A teal shield with a white lightning bolt on a deep navy rounded square.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B1726"/>
+      <stop offset="1" stop-color="#10263A"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1EC9B0"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+  </defs>
+  <path d="M66 12h124c29.823 0 54 24.177 54 54v124c0 29.823-24.177 54-54 54H66c-29.823 0-54-24.177-54-54V66c0-29.823 24.177-54 54-54Z" fill="url(#tile)"/>
+  <path d="M66 13.25h124c29.133 0 52.75 23.617 52.75 52.75v124c0 29.133-23.617 52.75-52.75 52.75H66c-29.133 0-52.75-23.617-52.75-52.75V66c0-29.133 23.617-52.75 52.75-52.75Z" fill="none" stroke="#087E77" stroke-width="1.25"/>
+  <path d="M128 39c-24 15-46 22-70 27v53c0 44 24 75 70 95 46-20 70-51 70-95V66c-24-5-46-12-70-27Z" fill="url(#shield)" stroke="#087E77" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="m144 70-42 62h24l-13 52 47-66h-23l7-48Z" fill="#F4F7FB" stroke="#F4F7FB" stroke-linejoin="round"/>
+</svg>

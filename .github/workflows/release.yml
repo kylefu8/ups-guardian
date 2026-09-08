@@ -1,0 +1,42 @@
+name: Publish release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate tag
+        shell: pwsh
+        run: |
+          $version = (Get-Content version.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag and version.json differ.' }
+      - name: Restore optional donation resources
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force assets/donations | Out-Null
+          # Validated base64 chunks avoid GitHub's per-secret and Windows environment limits.
+          $wechat = @('${{ secrets.DONATION_WECHAT_PNG_1 }}','${{ secrets.DONATION_WECHAT_PNG_2 }}','${{ secrets.DONATION_WECHAT_PNG_3 }}','${{ secrets.DONATION_WECHAT_PNG_4 }}','${{ secrets.DONATION_WECHAT_PNG_5 }}','${{ secrets.DONATION_WECHAT_PNG_6 }}') -join ''
+          $alipay = @('${{ secrets.DONATION_ALIPAY_PNG_1 }}','${{ secrets.DONATION_ALIPAY_PNG_2 }}','${{ secrets.DONATION_ALIPAY_PNG_3 }}','${{ secrets.DONATION_ALIPAY_PNG_4 }}','${{ secrets.DONATION_ALIPAY_PNG_5 }}','${{ secrets.DONATION_ALIPAY_PNG_6 }}') -join ''
+          if ($wechat) { [IO.File]::WriteAllBytes((Join-Path $PWD 'assets/donations/wechat.png'), [Convert]::FromBase64String($wechat)) }
+          if ($alipay) { [IO.File]::WriteAllBytes((Join-Path $PWD 'assets/donations/alipay.png'), [Convert]::FromBase64String($alipay)) }
+      - name: Build, test and package
+        shell: pwsh
+        run: |
+          ./build.ps1
+          ./test.ps1
+          ./package.ps1
+      - name: Publish versioned assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content version.json -Raw | ConvertFrom-Json).version
+          $arguments = @('release','create',$env:GITHUB_REF_NAME,'--title',"UPS Guardian $version",'--notes-file','CHANGELOG.md','--verify-tag')
+          if ($version.Contains('-')) { $arguments += '--prerelease' }
+          $arguments += @(Get-ChildItem artifacts/release -File | ForEach-Object FullName)
+          gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }

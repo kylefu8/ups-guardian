@@ -1,0 +1,26 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Windows application
+        shell: pwsh
+        run: ./build.ps1
+      - name: Simulated tests
+        shell: pwsh
+        run: ./test.ps1
+  portable-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet build source/Core/UpsGuardian.Core.csproj --configuration Release
