@@ -52,7 +52,7 @@ namespace UpsGuardian
                 if (!string.IsNullOrEmpty(binding.AccessibleSource)) binding.Control.AccessibleName = Localization.T(binding.AccessibleSource);
                 // Keep large headings large; fit compact field captions and buttons.
                 float size = binding.OriginalFont.Size;
-                if (!(binding.Control is Form) && binding.Control.Width > 0 && binding.Control.Height < 65)
+                if (!(binding.Control is Form) && !binding.Control.AutoSize && binding.Control.Width > 0 && binding.Control.Height < 65)
                 {
                     using (Graphics graphics = binding.Control.CreateGraphics())
                     {

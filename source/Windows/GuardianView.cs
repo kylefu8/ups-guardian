@@ -14,8 +14,8 @@ namespace UpsGuardian
     {
         readonly Color canvas = Color.FromArgb(244, 247, 251), navy = Color.FromArgb(11, 23, 38);
         readonly Color teal = Color.FromArgb(13, 148, 136), line = Color.FromArgb(226, 232, 240);
-        readonly Panel[] pages = new Panel[7];
-        readonly NavButton[] navigation = new NavButton[7];
+        readonly Panel[] pages = new Panel[5];
+        readonly NavButton[] navigation = new NavButton[5];
         readonly Label protectionDescription = new Label(), loadSummary = new Label(), modelName = new Label();
         readonly Label connectionBadge = new Label(), ruleSummary = new Label(), batteryRuleSummary = new Label();
         readonly Label saveState = new Label(), settingsSummary = new Label();
@@ -47,7 +47,7 @@ namespace UpsGuardian
             if (brandImage != null) sidebar.Controls.Add(new PictureBox { Image = brandImage, Bounds = new Rectangle(22, 28, 43, 43), SizeMode = PictureBoxSizeMode.Zoom });
             ViewLabel(sidebar, "UPS 守护", 76, 27, 168, 29, 16, true, Color.White);
             ViewLabel(sidebar, "本地电源保护", 77, 59, 168, 22, 8, false, Color.FromArgb(143, 162, 184));
-            string[] names = { "概览", "保护策略", "连接设置", "事件记录", "使用说明", "版本更新", "支持开发" };
+            string[] names = { "概览", "保护策略", "连接设置", "事件记录", "使用说明" };
             for (int i = 0; i < names.Length; ++i)
             {
                 int pageIndex = i;
@@ -76,7 +76,6 @@ namespace UpsGuardian
             arm.Click += delegate { if (string.IsNullOrWhiteSpace(config.Host)) Navigate(2); else if (WindowsPowerActions.IsAdministrator()) Arm(); else RelaunchElevated(); };
             pause.Click += delegate { Pause(false); }; admin.Click += delegate { RelaunchElevated(); };
             admin.Enabled = !WindowsPowerActions.IsAdministrator();
-            FormClosed += delegate { tips.Dispose(); if (brandImage != null) brandImage.Dispose(); if (brandIcon != null) brandIcon.Dispose(); };
             MakeLabelsTransparent(this); Navigate(0); ResumeLayout(false);
         }
 

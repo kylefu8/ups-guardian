@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-beta.2
+
+- Fix the disposed Icon exception when restarting as administrator or exiting. The tray and window now finish cleanup before shared images are released, and pending UI callbacks stop at shutdown.
+- Move Updates and Support into the Guide, keeping the main navigation focused on monitoring and protection.
+- Expand the guide in all seven languages with connection setup, load thresholds, permissions, battery-only hibernation, tray operation, recovery and update instructions.
+- Preserve version headings in the built-in release notes.
+
+Validation includes real WinForms close-to-tray, reopen, exit and repeated disposal, queued callbacks, all seven guide languages, and existing simulated protection/update tests. UAC approval and hardware power changes or hibernation are not automated by these checks.
+
 ## 0.1.0-beta.1
 
 First public Windows beta.

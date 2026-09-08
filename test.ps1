@@ -16,4 +16,15 @@ foreach ($testSource in (Get-ChildItem -LiteralPath (Join-Path $projectDirectory
     if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $logPath -Tail 60; throw "Test failed: $($testSource.Name)" }
     Write-Output "$($testSource.BaseName): $(Get-Content -LiteralPath $logPath -Tail 1)"
 }
-Write-Output 'All simulated tests passed. No power limits or sleep operations were invoked.'
+# Each real-window lifecycle run gets a fresh, unconfigured profile so it never
+# reads personal settings, polls a UPS, enables protection or touches recovery.
+$guiTestDirectory = Join-Path $testDirectory ('gui-' + [Guid]::NewGuid().ToString('N'))
+& (Join-Path $projectDirectory 'build.ps1') -OutputDirectory $guiTestDirectory
+$guiTestExecutable = Join-Path $guiTestDirectory 'GuiLifecycleCheck.exe'
+& $compiler /nologo /target:exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$guiTestExecutable" (Join-Path $projectDirectory 'tests\GuiLifecycleCheck.cs')
+if ($LASTEXITCODE -ne 0) { throw 'GUI lifecycle test compile failed' }
+$guiLog = Join-Path $testDirectory 'GuiLifecycleCheck.log'
+& $guiTestExecutable *> $guiLog
+if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $guiLog -Tail 60; throw 'GUI lifecycle test failed' }
+Write-Output "GuiLifecycleCheck: $(Get-Content -LiteralPath $guiLog -Tail 1)"
+Write-Output 'All simulated and GUI lifecycle tests passed. No power limits or sleep operations were invoked.'

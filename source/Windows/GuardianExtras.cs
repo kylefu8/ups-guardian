@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -16,6 +17,9 @@ namespace UpsGuardian
         readonly ModernButton checkUpdate = new ModernButton(), installUpdate = new ModernButton();
         readonly RichTextBox updateNotes = new RichTextBox();
         readonly LocalizedView localizedView = new LocalizedView();
+        readonly Panel[] guidePages = new Panel[3];
+        readonly Button[] guideTabs = new Button[3];
+        readonly List<Image> donationImages = new List<Image>();
         UiPreferences uiPreferences;
         UpdateRelease availableRelease;
         bool languageChanging, updateBusy;
@@ -56,7 +60,6 @@ namespace UpsGuardian
             bool oldLoading = loading; loading = true;
             try { unit.Items[0] = Localization.T("估算功率（W）"); unit.Items[1] = Localization.T("负载率（%）"); }
             finally { loading = oldLoading; }
-            FormClosed += delegate { if (downloadCancellation != null) downloadCancellation.Cancel(); localizedView.Dispose(); };
         }
         void ChangeLanguage()
         {
@@ -81,60 +84,89 @@ namespace UpsGuardian
 
         void BuildGuidePage()
         {
-            Panel page = pages[4]; PageHeading(page, "使用说明", "简要使用说明");
-            var steps = Surface(page, 30, 104, 832, 310);
-            string[] lines = {
-                "1. 连接你的 UPS 服务器。", "2. 确认功率口径及保护阈值。",
-                "3. 启用保护前，先验证本机限功耗与恢复。", "4. 仅在电池供电且满足条件时倒计时休眠。",
-                "5. 可随时暂停保护并恢复原设置。" };
-            for (int i = 0; i < lines.Length; i++) ViewLabel(steps, lines[i], 25, 24 + i * 54, 776, 45, 11, i == 0, ink);
-            var explanation = Surface(page, 30, 431, 832, 179);
-            ViewLabel(explanation, "关于功率估算", 24, 18, 780, 31, 12, true, ink);
-            ViewLabel(explanation, "总负载包括 UPS 上的所有设备；显示的瓦数可能是估算值。", 25, 60, 777, 43, 10, false, muted);
-            ViewLabel(explanation, "休眠保留会话，但不会替每个应用保存文件。", 25, 114, 777, 43, 10, false, muted);
-            MakeButton(page, "查看 GitHub", 644, 627, 218, 40, Color.White, ink).Click += delegate { OpenProject(); };
+            Panel page = pages[4]; page.AutoScroll = false;
+            PageHeading(page, "使用说明", "连接、保护与日常操作");
+            string[] names = { "操作指南", "版本更新", "支持开发" };
+            for (int i = 0; i < names.Length; i++)
+            {
+                int index = i;
+                guideTabs[i] = MakeButton(page, names[i], 30 + i * 286, 109, 260, 38, Color.White, ink);
+                guideTabs[i].AccessibleName = names[i];
+                guideTabs[i].Click += delegate { NavigateGuide(index); };
+                guidePages[i] = new Panel { Bounds = new Rectangle(0, 159, 892, 527), BackColor = canvas, Visible = i == 0 };
+                page.Controls.Add(guidePages[i]);
+            }
+            var reading = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true,
+                FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(30, 0, 0, 16) };
+            guidePages[0].Controls.Add(reading);
+            foreach (string[] section in GuideContent.Sections)
+            {
+                var card = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.White,
+                    Padding = new Padding(24, 20, 24, 20), Margin = new Padding(0, 0, 0, 14),
+                    MinimumSize = new Size(814, 0), MaximumSize = new Size(814, 0) };
+                var title = new Label { Text = section[0], AutoSize = true, MaximumSize = new Size(758, 0),
+                    Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold), ForeColor = ink,
+                    Margin = new Padding(0, 0, 0, 12), UseMnemonic = false };
+                var body = new Label { Text = section[1], AutoSize = true, MaximumSize = new Size(758, 0),
+                    Font = new Font("Microsoft YaHei UI", 10.5F), ForeColor = muted,
+                    Margin = Padding.Empty, UseMnemonic = false };
+                card.Controls.Add(title); card.Controls.Add(body); reading.Controls.Add(card);
+            }
+            NavigateGuide(0);
+        }
+        void NavigateGuide(int index)
+        {
+            for (int i = 0; i < guidePages.Length; i++)
+            {
+                guidePages[i].Visible = i == index;
+                guideTabs[i].BackColor = i == index ? teal : Color.White;
+                guideTabs[i].ForeColor = i == index ? Color.White : ink;
+                guideTabs[i].Invalidate();
+            }
         }
         void BuildUpdatePage()
         {
-            Panel page = pages[5]; PageHeading(page, "版本更新", "当前版本");
-            var release = Surface(page, 30, 104, 832, 138);
+            Panel page = guidePages[1];
+            var release = Surface(page, 30, 0, 832, 138);
             versionValue.SetBounds(24, 18, 482, 46); versionValue.Font = new Font("Segoe UI", 24, FontStyle.Bold); versionValue.Text = BuildInfo.Version; versionValue.ForeColor = ink; release.Controls.Add(versionValue);
             ViewLabel(release, "Windows 版本", 25, 76, 480, 28, 10, false, muted);
             StyleButton(checkUpdate, "检查更新", 592, 24, 214, 42, teal, Color.White); release.Controls.Add(checkUpdate);
             checkUpdate.Click += delegate { CheckForUpdates(); };
             updateStatus.SetBounds(24, 108, 781, 24); updateStatus.Font = new Font("Microsoft YaHei UI", 9F); updateStatus.ForeColor = muted; release.Controls.Add(updateStatus);
-            var notes = Surface(page, 30, 259, 832, 291);
+            var notes = Surface(page, 30, 155, 832, 258);
             ViewLabel(notes, "更新日志", 22, 15, 782, 28, 12, true, ink);
-            updateNotes.SetBounds(23, 56, 784, 215); updateNotes.ReadOnly = true; updateNotes.BorderStyle = BorderStyle.None;
+            updateNotes.SetBounds(23, 56, 784, 182); updateNotes.ReadOnly = true; updateNotes.BorderStyle = BorderStyle.None;
             updateNotes.BackColor = Color.White; updateNotes.ForeColor = ink; updateNotes.Font = new Font("Microsoft YaHei UI", 10F); updateNotes.DetectUrls = false;
             updateNotes.Text = PlainReleaseNotes(ReadEmbeddedText("Guardian.Changelog")); notes.Controls.Add(updateNotes);
-            ViewLabel(page, "自动保护运行时，请先暂停并恢复限制，再安装更新。", 33, 568, 801, 40, 9F, false, muted);
-            StyleButton(installUpdate, "下载并安装", 644, 624, 218, 42, teal, Color.White); installUpdate.Enabled = false; page.Controls.Add(installUpdate);
+            ViewLabel(page, "自动保护运行时，请先暂停并恢复限制，再安装更新。", 33, 428, 801, 40, 9F, false, muted);
+            StyleButton(installUpdate, "下载并安装", 644, 480, 218, 42, teal, Color.White); installUpdate.Enabled = false; page.Controls.Add(installUpdate);
             installUpdate.Click += delegate { DownloadAndInstall(); };
-            MakeButton(page, "查看完整更新记录", 30, 624, 270, 42, Color.White, ink).Click += delegate { Process.Start("https://github.com/kylefu8/ups-guardian/releases"); };
+            MakeButton(page, "查看完整更新记录", 30, 480, 270, 42, Color.White, ink).Click += delegate { Process.Start("https://github.com/kylefu8/ups-guardian/releases"); };
         }
         void BuildSupportPage()
         {
-            Panel page = pages[6]; PageHeading(page, "支持开发", "打赏完全自愿，不影响任何功能。");
+            Panel page = guidePages[2];
+            ViewLabel(page, "打赏完全自愿，不影响任何功能。", 33, 2, 799, 32, 10, false, muted);
             string[] methods = { "微信", "支付宝" }; string[] resources = { "Guardian.Donation.wechat", "Guardian.Donation.alipay" };
             for (int i = 0; i < methods.Length; i++)
             {
-                var card = Surface(page, 30 + i * 424, 106, 408, 449);
+                var card = Surface(page, 30 + i * 424, 42, 408, 400);
                 ViewLabel(card, methods[i], 23, 20, 361, 31, 15, true, ink);
                 Image code = LoadDonationImage(resources[i]);
                 if (code != null)
                 {
-                    var image = new PictureBox { Image = code, Bounds = new Rectangle(66, 92, 276, 276), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.White };
-                    card.Controls.Add(image); FormClosed += delegate { code.Dispose(); };
+                    var image = new PictureBox { Image = code, Bounds = new Rectangle(74, 75, 260, 260), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.White };
+                    card.Controls.Add(image); donationImages.Add(code);
                 }
                 else
                 {
                     ViewLabel(card, "收款码尚未配置。", 37, 168, 333, 70, 14, true, muted).TextAlign = ContentAlignment.MiddleCenter;
                 }
-                ViewLabel(card, "扫码支持开发", 30, 391, 347, 31, 10, false, teal).TextAlign = ContentAlignment.MiddleCenter;
+                ViewLabel(card, "扫码支持开发", 30, 356, 347, 31, 10, false, teal).TextAlign = ContentAlignment.MiddleCenter;
             }
-            ViewLabel(page, "收款码由项目维护者提供。", 33, 578, 799, 32, 10, false, muted);
-            MakeButton(page, "项目主页", 644, 624, 218, 42, Color.White, ink).Click += delegate { OpenProject(); };
+            ViewLabel(page, "收款码由项目维护者提供。", 33, 481, 580, 32, 10, false, muted);
+            MakeButton(page, "项目主页", 644, 480, 218, 42, Color.White, ink).Click += delegate { OpenProject(); };
         }
         static Image LoadDonationImage(string name)
         { using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)) { if (stream == null) return null; using (Image image = Image.FromStream(stream)) return new Bitmap(image); } }
@@ -144,7 +176,7 @@ namespace UpsGuardian
         {
             var text = new System.Text.StringBuilder();
             using (var reader = new StringReader(markdown ?? ""))
-            { string line; while ((line = reader.ReadLine()) != null) { if (!line.TrimStart().StartsWith("#", StringComparison.Ordinal)) text.AppendLine(line); } }
+            { string line; while ((line = reader.ReadLine()) != null) text.AppendLine(line.TrimStart('#', ' ')); }
             return text.ToString().Trim();
         }
         void OpenProject() { Process.Start("https://github.com/kylefu8/ups-guardian"); }
@@ -174,12 +206,14 @@ namespace UpsGuardian
             { LocalizedMessage("自动保护运行时，请先暂停并恢复限制，再安装更新。", "版本更新"); return; }
             if (LocalizedMessage("安装更新需要退出程序，继续？", "版本更新", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             updateBusy = true; checkUpdate.Enabled = installUpdate.Enabled = false; updateStatus.Text = "正在下载更新…";
-            downloadCancellation = new CancellationTokenSource(); UpdateRelease release = availableRelease;
+            if (downloadCancellation != null) downloadCancellation.Dispose();
+            downloadCancellation = new CancellationTokenSource();
+            CancellationToken cancellation = downloadCancellation.Token; UpdateRelease release = availableRelease;
             string stageRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UPSGuardian", "updates");
             Task.Run(delegate
             {
                 StagedUpdate update = null; Exception error = null;
-                try { update = UpdateService.Download(release, stageRoot, delegate(int progress) { Ui(delegate { updateStatus.Text = Localization.F("下载进度：{0}%", progress); }); }, downloadCancellation.Token); }
+                try { update = UpdateService.Download(release, stageRoot, delegate(int progress) { Ui(delegate { updateStatus.Text = Localization.F("下载进度：{0}%", progress); }); }, cancellation); }
                 catch (Exception ex) { error = ex; }
                 Ui(delegate
                 {

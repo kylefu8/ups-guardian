@@ -21,7 +21,7 @@ macOS is planned for a later phase. This release does not include a macOS applic
 - Reversible Windows processor limits and supported NVIDIA GPU power limits; CPU-only reduction is available.
 - Battery-only hibernation rules with confirmation time, a visible countdown and cancellation when conditions clear.
 - Simplified Chinese, English, Japanese, Korean, French, German and Spanish interface resources.
-- In-app quick guide, version information, GitHub release checks, verified downloads and update installation.
+- Detailed in-app guide in all seven languages, with Updates and Support available inside it.
 - Optional, voluntary donation page using maintainer-provided images.
 
 ## Requirements
@@ -54,7 +54,7 @@ UPS load includes every device attached to the UPS. When actual watts are unavai
 
 ## Updates and local data
 
-Use **Updates** to check GitHub and choose **Download and install**. Installation requires automatic protection to be paused and any owned limits restored. The helper waits for the main application to exit, verifies the package again, replaces only allowed release files, rolls back on failure and restarts the application. It does not replace `data/`.
+Open **Guide → Updates** to check GitHub and choose **Download and install**. Installation requires automatic protection to be paused and any owned limits restored. The helper waits for the main application to exit, verifies the package again, replaces only allowed release files, rolls back on failure and restarts the application. It does not replace `data/`. The **Guide → Support** section contains the optional donation codes.
 
 The current version and release channel are defined in `version.json`. Beta versions can discover compatible prereleases; stable versions ignore prereleases. Downloads use HTTPS and a published SHA-256 checksum. The beta does not yet provide code signing or notarization.
 

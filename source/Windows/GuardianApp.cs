@@ -57,6 +57,8 @@ namespace UpsGuardian
         NutSnapshot sample;
         bool fetching, busy, pausePending, exiting, exitPending, loading, reduced, firstRecovery, throttleFault, ratingNoticeShown;
         bool startHidden;
+        volatile bool closing;
+        bool resourcesDisposed;
         DateTime nextPoll = DateTime.MinValue;
         string lastError = "", lastTransition = "";
         string ConfigPath { get { return Path.Combine(dataDirectory, "settings.xml"); } }
@@ -77,12 +79,11 @@ namespace UpsGuardian
             BuildInterface();
             LoadControls(); OnSettingsSaved(); SetupTray(); AttachLocalization();
             timer.Interval = 1000; timer.Tick += Tick;
-            Shown += delegate { timer.Start(); Tick(null, EventArgs.Empty); if (startHidden) BeginInvoke((Action)delegate { Hide(); }); };
+            Shown += delegate { timer.Start(); Tick(null, EventArgs.Empty); if (startHidden) Ui(delegate { Hide(); }); };
             FormClosing += delegate(object sender, FormClosingEventArgs e)
             {
                 if (!exiting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); tray.ShowBalloonTip(2500, Localization.T("UPS 守护仍在运行"), Localization.T("双击托盘图标打开；从托盘菜单退出。"), ToolTipIcon.Info); }
             };
-            FormClosed += delegate { timer.Stop(); tray.Visible = false; tray.Dispose(); showRequest.Dispose(); };
             Notice(lastError.Length > 0 ? lastError : "只读监测已启动。启用保护后才会修改功耗或触发休眠。", false);
             if (updateFailed) Notice("更新失败，已恢复之前的版本，请查看更新日志。", true);
         }
@@ -99,8 +100,44 @@ namespace UpsGuardian
             tray.ContextMenuStrip = menu; tray.Icon = brandIcon ?? SystemIcons.Shield; tray.Text = "UPS 守护 · 只读监测"; tray.Visible = true;
             tray.DoubleClick += delegate { ShowWindow(); };
         }
-        void ShowWindow() { Show(); WindowState = FormWindowState.Normal; Activate(); }
-        void Ui(Action action) { if (!IsDisposed && IsHandleCreated) { try { BeginInvoke(action); } catch (InvalidOperationException) { } } }
+        void ShowWindow() { if (closing) return; Show(); WindowState = FormWindowState.Normal; Activate(); }
+        void Ui(Action action)
+        {
+            if (closing || IsDisposed || Disposing || !IsHandleCreated) return;
+            try { BeginInvoke((Action)delegate { if (!closing && !IsDisposed && !Disposing) action(); }); }
+            catch (InvalidOperationException) { }
+        }
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
+            // A normal X click is canceled by the hide-to-tray handler.
+            if (!e.Cancel) StopCallbacks();
+        }
+        void StopCallbacks()
+        {
+            if (closing) return;
+            closing = true; timer.Stop();
+            if (downloadCancellation != null) downloadCancellation.Cancel();
+        }
+        protected override void Dispose(bool disposing)
+        {
+            if (!disposing || resourcesDisposed) { base.Dispose(disposing); return; }
+            resourcesDisposed = true;
+            StopCallbacks();
+            timer.Dispose();
+            var menu = tray.ContextMenuStrip;
+            // NotifyIcon touches Icon.Handle while hiding. Keep the shared icon
+            // alive until BOTH the tray and the Form have finished disposing.
+            tray.Visible = false; tray.Icon = null; tray.ContextMenuStrip = null;
+            tray.Dispose(); if (menu != null) menu.Dispose();
+            showRequest.Dispose(); tips.Dispose();
+            base.Dispose(true);
+            localizedView.Dispose();
+            foreach (Image image in donationImages) image.Dispose();
+            if (brandImage != null) brandImage.Dispose();
+            if (brandIcon != null) brandIcon.Dispose();
+            if (downloadCancellation != null) downloadCancellation.Dispose();
+        }
         void Log(string text)
         { try { File.AppendAllText(Path.Combine(dataDirectory, "events.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + text + Environment.NewLine); if (currentPage == 3) RefreshEvents(); } catch { } }
         void Notice(string text, bool balloon)
@@ -219,6 +256,7 @@ namespace UpsGuardian
         }
         void Tick(object sender, EventArgs e)
         {
+            if (closing) return;
             if (showRequest.WaitOne(0)) ShowWindow();
             DateTime now = DateTime.UtcNow;
             if (now >= nextPoll && !fetching) { nextPoll = now.AddSeconds(2); Poll(); }
