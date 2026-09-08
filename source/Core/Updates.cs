@@ -319,6 +319,11 @@ namespace UpsGuardian
 
         private static HttpWebResponse OpenResponse(Uri initial, bool releaseAsset, CancellationToken cancellation)
         {
+            // A legacy .NET Framework host may otherwise default to SSL3/TLS1.0.
+            // Preserve OS defaults or newer explicit choices; upgrade only legacy selections.
+            SecurityProtocolType protocol = ServicePointManager.SecurityProtocol;
+            if (protocol != SecurityProtocolType.SystemDefault && (int)protocol < (int)SecurityProtocolType.Tls12)
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             Uri current = initial;
             for (int redirect = 0; redirect <= MaximumRedirects; redirect++)
             {

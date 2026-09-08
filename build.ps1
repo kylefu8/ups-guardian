@@ -13,6 +13,8 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory,$generatedDirectory |
 $versionSource = Join-Path $generatedDirectory 'BuildInfo.g.cs'
 @"
 using System.Reflection;
+using System.Runtime.Versioning;
+[assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName=".NET Framework 4.8")]
 [assembly: AssemblyTitle("UPS Guardian")]
 [assembly: AssemblyProduct("UPS Guardian")]
 [assembly: AssemblyCompany("kylefu8")]
