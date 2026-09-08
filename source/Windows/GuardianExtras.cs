@@ -107,7 +107,7 @@ namespace UpsGuardian
             ViewLabel(notes, "更新日志", 22, 15, 782, 28, 12, true, ink);
             updateNotes.SetBounds(23, 56, 784, 215); updateNotes.ReadOnly = true; updateNotes.BorderStyle = BorderStyle.None;
             updateNotes.BackColor = Color.White; updateNotes.ForeColor = ink; updateNotes.Font = new Font("Microsoft YaHei UI", 10F); updateNotes.DetectUrls = false;
-            updateNotes.Text = BuildInfo.Version + "\n\n" + ReadEmbeddedText("Guardian.Changelog"); notes.Controls.Add(updateNotes);
+            updateNotes.Text = PlainReleaseNotes(ReadEmbeddedText("Guardian.Changelog")); notes.Controls.Add(updateNotes);
             ViewLabel(page, "自动保护运行时，请先暂停并恢复限制，再安装更新。", 33, 568, 801, 40, 9F, false, muted);
             StyleButton(installUpdate, "下载并安装", 644, 624, 218, 42, teal, Color.White); installUpdate.Enabled = false; page.Controls.Add(installUpdate);
             installUpdate.Click += delegate { DownloadAndInstall(); };
@@ -140,6 +140,13 @@ namespace UpsGuardian
         { using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)) { if (stream == null) return null; using (Image image = Image.FromStream(stream)) return new Bitmap(image); } }
         static string ReadEmbeddedText(string name)
         { using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)) { if (stream == null) return ""; using (var reader = new StreamReader(stream)) return reader.ReadToEnd(); } }
+        static string PlainReleaseNotes(string markdown)
+        {
+            var text = new System.Text.StringBuilder();
+            using (var reader = new StringReader(markdown ?? ""))
+            { string line; while ((line = reader.ReadLine()) != null) { if (!line.TrimStart().StartsWith("#", StringComparison.Ordinal)) text.AppendLine(line); } }
+            return text.ToString().Trim();
+        }
         void OpenProject() { Process.Start("https://github.com/kylefu8/ups-guardian"); }
         void CheckForUpdates()
         {
@@ -155,7 +162,7 @@ namespace UpsGuardian
                     if (error != null) { updateStatus.Text = Localization.F("更新检查失败：{0}", error.Message); return; }
                     availableRelease = result.Release;
                     if (result.Status == UpdateStatus.Available)
-                    { updateStatus.Text = Localization.F("发现新版本 {0}", result.Release.Version); installUpdate.Enabled = true; updateNotes.Text = result.Release.Notes; }
+                    { updateStatus.Text = Localization.F("发现新版本 {0}", result.Release.Version); installUpdate.Enabled = true; updateNotes.Text = PlainReleaseNotes(result.Release.Notes); }
                     else updateStatus.Text = result.Status == UpdateStatus.NoReleases ? "暂无发布版本。" : "已经是最新版本。";
                 });
             });

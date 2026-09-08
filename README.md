@@ -14,6 +14,8 @@ macOS is planned for a later phase. This release does not include a macOS applic
 
 ## Features
 
+![Built-in guide shown in Japanese](docs/screenshots/guide-ja.jpg)
+
 - Read-only NUT monitoring: UPS load, battery charge, estimated runtime and supply status.
 - Live load chart, tray operation, event history and configurable protection rules.
 - Reversible Windows processor limits and supported NVIDIA GPU power limits; CPU-only reduction is available.
