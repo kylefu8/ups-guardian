@@ -230,5 +230,6 @@
   "更新失败，已恢复之前的版本，请查看更新日志。": "Das Update ist fehlgeschlagen. Die vorherige Version wurde wiederhergestellt. Prüfen Sie das Update-Protokoll.",
   "秒": "s",
   "降功耗触发阈值": "Schwelle zur Begrenzung",
-  "以管理员身份打开": "Als Administrator öffnen"
+  "以管理员身份打开": "Als Administrator öffnen",
+  "待配置": "Einrichtung nötig"
 }

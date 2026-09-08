@@ -230,5 +230,6 @@
   "更新失败，已恢复之前的版本，请查看更新日志。": "La mise à jour a échoué. La version précédente a été restaurée. Consultez le journal de mise à jour.",
   "秒": "s",
   "降功耗触发阈值": "Seuil de réduction",
-  "以管理员身份打开": "Ouvrir en administrateur"
+  "以管理员身份打开": "Ouvrir en administrateur",
+  "待配置": "À configurer"
 }

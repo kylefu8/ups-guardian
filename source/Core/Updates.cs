@@ -322,7 +322,8 @@ namespace UpsGuardian
             // A legacy .NET Framework host may otherwise default to SSL3/TLS1.0.
             // Preserve OS defaults or newer explicit choices; upgrade only legacy selections.
             SecurityProtocolType protocol = ServicePointManager.SecurityProtocol;
-            if (protocol != SecurityProtocolType.SystemDefault && (int)protocol < (int)SecurityProtocolType.Tls12)
+            // Zero means system defaults; .NET Standard 2.0 lacks the named enum member.
+            if ((int)protocol != 0 && (int)protocol < (int)SecurityProtocolType.Tls12)
                 ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             Uri current = initial;
             for (int redirect = 0; redirect <= MaximumRedirects; redirect++)

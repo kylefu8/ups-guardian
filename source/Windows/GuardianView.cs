@@ -237,7 +237,7 @@ namespace UpsGuardian
             permissionLabel.Text = elevated ? "当前：管理员权限，可以启用自动保护。" : "当前：普通权限，可以连接 UPS 并查看数据。";
             admin.Visible = !elevated;
             cards[3].ForeColor = decision.Fresh ? (sample != null && sample.OnBattery ? Color.FromArgb(173, 104, 14) : teal) : muted;
-            if (!decision.Fresh) cards[3].Text = sample == null ? "连接中" : "数据已失效";
+            if (!decision.Fresh) cards[3].Text = sample == null ? (string.IsNullOrWhiteSpace(config.Host) ? "待配置" : "连接中") : "数据已失效";
             if (sample != null)
             {
                 sourceLabel.Text = sample.MeasuredWatts.HasValue ? "实测" : "估算";

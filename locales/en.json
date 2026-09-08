@@ -230,5 +230,6 @@
   "更新失败，已恢复之前的版本，请查看更新日志。": "The update failed. The previous version was restored. Check the update log.",
   "秒": "s",
   "降功耗触发阈值": "Power-limit trigger threshold",
-  "以管理员身份打开": "Open as administrator"
+  "以管理员身份打开": "Open as administrator",
+  "待配置": "Setup needed"
 }
