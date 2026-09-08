@@ -604,9 +604,17 @@ namespace UpsGuardian
         {
             PowerCapabilities result = new PowerCapabilities();
             result.PlatformName = "Windows";
-            result.SessionProtectionMode = "SeShutdownPrivilege";
-            result.SuspendSupported = true;
-            result.SuspendStatus = "Windows SetSuspendState（调用时启用 SeShutdownPrivilege）";
+            result.SessionProtectionMode = "Hibernate";
+            try
+            {
+                result.SuspendSupported = IsPwrHibernateAllowed();
+                result.SuspendStatus = result.SuspendSupported ? "Windows hibernation is available." : "Windows hibernation is unavailable.";
+            }
+            catch (Exception ex)
+            {
+                result.SuspendSupported = false;
+                result.SuspendStatus = "Could not detect Windows hibernation support: " + ex.Message;
+            }
 
             try
             {
@@ -840,6 +848,10 @@ namespace UpsGuardian
                 return stdout;
             }
         }
+
+        [DllImport("powrprof.dll")]
+        [return: MarshalAs(UnmanagedType.U1)]
+        private static extern bool IsPwrHibernateAllowed();
 
         [DllImport("powrprof.dll", SetLastError = true)]
         private static extern uint PowerGetActiveScheme(IntPtr userRootPowerKey, out IntPtr activePolicyGuid);
