@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
@@ -162,6 +163,13 @@ internal static class DiscoveryUiCheck
         Assert(Object.Equals(expected, actual), message + " (expected " + expected + ", got " + actual + ")");
     }
 
+    private static string Localized(string source, params object[] args)
+    {
+        var translate = formType.Assembly.GetType("UpsGuardian.Localization", true).GetMethod("T");
+        string template = (string)translate.Invoke(null, new object[] { source });
+        return args.Length == 0 ? template : String.Format(CultureInfo.CurrentCulture, template, args);
+    }
+
     private static void CheckInitialAndDiscoveryCallbacks(Form form)
     {
         Timer timer = (Timer)GetMember(form, "timer");
@@ -200,7 +208,7 @@ internal static class DiscoveryUiCheck
         int generation = GetGeneration(form);
         Invoke(form, "CompleteDiscovery", generation, CandidateList(), null, false);
         Assert(list.Items.Count == 0, "No-result discovery leaves the list empty");
-        Assert(status.Text.IndexOf("未找到", StringComparison.Ordinal) >= 0, "No-result status is visible");
+        AssertEqual(Localized("未找到可读取的 UPS。请检查局域网、NUT 服务和客户端白名单后重试。"), status.Text, "No-result status is visible");
         Assert(!GetBool(form, "discoveryBusy"), "No-result discovery clears the busy state");
         Assert(scan.Enabled, "A completed discovery can be started again");
 
@@ -239,7 +247,7 @@ internal static class DiscoveryUiCheck
         Assert(cancellation != null && (bool)GetMember(cancellation, "IsCancellationRequested"),
             "Cancel requests cancellation without starting a scan in the test");
         Invoke(form, "CompleteDiscovery", cancelGeneration, CandidateList(), null, true);
-        Assert(status.Text.IndexOf("取消", StringComparison.Ordinal) >= 0, "Canceled discovery is reported");
+        AssertEqual(Localized("搜索已取消。尚未确认 UPS，监测和保护均未启用。"), status.Text, "Canceled discovery is reported");
         Assert(!GetBool(form, "discoveryBusy"), "Canceled discovery clears the busy state");
     }
 
@@ -274,7 +282,7 @@ internal static class DiscoveryUiCheck
         Assert(!GetBool(form, "connectionReady"), "Validation failure leaves monitoring unready");
         Assert(!GetBool(form, "discoveryBusy"), "Validation failure clears the busy state");
         AssertEqual(oldHost, GetMember(config, "Host"), "Validation failure does not switch to a failed candidate");
-        Assert(status.Text.IndexOf("验证失败", StringComparison.Ordinal) >= 0, "Validation failure reason is visible");
+        AssertEqual(Localized("目标验证失败，监测和保护均未启用：{0}", "synthetic validation failure"), status.Text, "Validation failure reason is visible");
 
         generation = (int)Invoke(form, "BeginDiscoveryOperation");
         Invoke(form, "CompleteDiscovery", generation, CandidateList(first), null, false);
@@ -297,7 +305,7 @@ internal static class DiscoveryUiCheck
         AssertEqual(25, GetMember(config, "HibernateCountdownSeconds"), "Confirmation preserves the hibernate countdown");
         Assert(Object.ReferenceEquals(snapshot, GetMember(form, "sample")), "Confirmation accepts the synthetic current sample");
         Assert(!GetBool(form, "discoveryBusy"), "Successful confirmation clears the busy state");
-        Assert(status.Text.IndexOf("只读监测", StringComparison.Ordinal) >= 0, "Confirmation reports read-only monitoring");
+        AssertEqual(Localized("已确认 {0}:{1} / {2}。正在只读监测，自动保护关闭。", "192.0.2.20", 3493, "ups-confirm"), status.Text, "Confirmation reports read-only monitoring");
         Assert(File.Exists(ConfigPath(form)), "Confirmation writes the settings file");
         return first;
     }
@@ -357,11 +365,17 @@ internal static class DiscoveryUiCheck
     }
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         Form form = null;
         try
         {
+            if (args.Length > 0)
+            {
+                var culture = CultureInfo.GetCultureInfo(args[0]);
+                System.Threading.Thread.CurrentThread.CurrentCulture = culture;
+                System.Threading.Thread.CurrentThread.CurrentUICulture = culture;
+            }
             Assert(!Directory.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data")),
                 "Discovery test requires a fresh isolated profile");
             Application.EnableVisualStyles();
