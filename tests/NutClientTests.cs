@@ -15,6 +15,8 @@ internal static class NutClientTests
     private static int Main()
     {
         Run("nominal estimate", TestNominalEstimate);
+        Run("LIST UPS response", TestListUpsResponse);
+        Run("malformed LIST UPS response", TestMalformedListUpsResponse);
         Run("real watts precedence", TestMeasuredRealPowerPrecedence);
         Run("missing values", TestMissingValues);
         Run("overload estimate", TestOverloadEstimate);
@@ -24,6 +26,7 @@ internal static class NutClientTests
         Run("incomplete response", TestIncompleteResponse);
         Run("malformed response", TestMalformedResponse);
         Run("bounded timeout", TestTimeout);
+        Run("cancel stalled read", TestCancelledRead);
         Run("argument validation", TestArgumentValidation);
         Console.WriteLine("Passed {0}; failed {1}.", passed, failed);
         return failed == 0 ? 0 : 1;
@@ -64,6 +67,32 @@ internal static class NutClientTests
             AssertEqual(snapshot.Model, "APC BX1200CI-CN", "device.model");
             AssertNear(snapshot.ChargePercent, 100.0, "battery charge");
             AssertNear(snapshot.RuntimeSeconds, 628.0, "battery runtime");
+        }
+    }
+
+    private static void TestListUpsResponse()
+    {
+        string response =
+            "BEGIN LIST UPS\n" +
+            "UPS ups \"Desk \\\"UPS\\\"\"\n" +
+            "UPS backup \"Backup unit\"\n" +
+            "END LIST UPS\n";
+        using (FakeNutServer server = new FakeNutServer(response))
+        {
+            System.Collections.Generic.IList<NutUpsInfo> ups = NutClient.ListUps("127.0.0.1", server.Port, 2000);
+            Assert(ups.Count == 2, "LIST UPS should return both entries");
+            AssertEqual(ups[0].UpsName, "ups", "first UPS name");
+            AssertEqual(ups[0].Description, "Desk \"UPS\"", "first UPS description");
+            AssertEqual(ups[1].UpsName, "backup", "second UPS name");
+        }
+    }
+
+    private static void TestMalformedListUpsResponse()
+    {
+        const string response = "BEGIN LIST UPS\nVAR ups ups.status \"OL\"\nEND LIST UPS\n";
+        using (FakeNutServer server = new FakeNutServer(response))
+        {
+            AssertThrows<NutException>(delegate { NutClient.ListUps("127.0.0.1", server.Port, 2000); }, "Malformed NUT UPS line");
         }
     }
 
@@ -182,6 +211,20 @@ internal static class NutClientTests
         }
         watch.Stop();
         Assert(watch.ElapsedMilliseconds < 2500, "500 ms timeout should remain bounded");
+    }
+
+    private static void TestCancelledRead()
+    {
+        using (var server = new FakeNutServer("BEGIN LIST VAR ups\nEND LIST VAR ups\n", 1000))
+        using (var cancellation = new System.Threading.CancellationTokenSource())
+        {
+            cancellation.CancelAfter(100);
+            var watch = Stopwatch.StartNew();
+            AssertThrows<OperationCanceledException>(delegate {
+                NutClient.Read("127.0.0.1", server.Port, "ups", 4000, cancellation.Token);
+            }, null);
+            Assert(watch.ElapsedMilliseconds < 900, "cancel must interrupt a stalled socket read before its request timeout");
+        }
     }
 
     private static void TestArgumentValidation()

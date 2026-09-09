@@ -28,7 +28,7 @@ class GuardLogicTests
             var defaults = new GuardSettings();
             defaults.Validate();
             Assert(defaults.Host == "" && defaults.UsePercent && defaults.LoadThreshold == 80 &&
-                defaults.RecoveryMargin == 10 && defaults.GpuWatts == 0,
+                defaults.RecoveryMargin == 10 && defaults.GpuWatts == 0 && !defaults.ConnectionConfirmed,
                 "new profile is generic, percent-based, and CPU-only until configured");
             defaults.Host = "bad host with spaces";
             bool malformedHostRejected = false;
@@ -37,13 +37,18 @@ class GuardLogicTests
             string preservedPath = Path.Combine(Path.GetTempPath(), "ups-guardian-profile-" + Guid.NewGuid().ToString("N") + ".xml");
             try
             {
-                var existing = new GuardSettings { Host = "198.51.100.20", UsePercent = false, LoadThreshold = 750, RecoveryMargin = 50, GpuWatts = 150 };
+                var existing = new GuardSettings { Host = "198.51.100.20", UsePercent = false, LoadThreshold = 750, RecoveryMargin = 50, GpuWatts = 150, ConnectionConfirmed = true };
                 existing.Save(preservedPath);
                 var loaded = GuardSettings.Load(preservedPath);
                 Assert(loaded.Host == existing.Host && loaded.UsePercent == existing.UsePercent &&
                     loaded.LoadThreshold == existing.LoadThreshold && loaded.RecoveryMargin == existing.RecoveryMargin &&
                     loaded.GpuWatts == existing.GpuWatts,
                     "existing saved profile values remain unchanged");
+                Assert(loaded.ConnectionConfirmed, "explicit UPS confirmation is remembered");
+                File.WriteAllText(preservedPath, File.ReadAllText(preservedPath).Replace("<ConnectionConfirmed>true</ConnectionConfirmed>", ""));
+                var legacy = GuardSettings.Load(preservedPath);
+                Assert(!legacy.ConnectionConfirmed && legacy.LoadThreshold == 750 && legacy.Host == existing.Host,
+                    "legacy endpoints require confirmation without changing saved thresholds");
             }
             finally { try { if (File.Exists(preservedPath)) File.Delete(preservedPath); } catch { } }
             var settings = new GuardSettings { UsePercent = true, LoadThreshold = 80, RecoveryMargin = 10 };

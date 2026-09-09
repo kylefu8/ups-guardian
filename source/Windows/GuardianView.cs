@@ -14,8 +14,8 @@ namespace UpsGuardian
     {
         readonly Color canvas = Color.FromArgb(244, 247, 251), navy = Color.FromArgb(11, 23, 38);
         readonly Color teal = Color.FromArgb(13, 148, 136), line = Color.FromArgb(226, 232, 240);
-        readonly Panel[] pages = new Panel[5];
-        readonly NavButton[] navigation = new NavButton[5];
+        readonly Panel[] pages = new Panel[7];
+        readonly NavButton[] navigation = new NavButton[7];
         readonly Label protectionDescription = new Label(), loadSummary = new Label(), modelName = new Label();
         readonly Label connectionBadge = new Label(), ruleSummary = new Label(), batteryRuleSummary = new Label();
         readonly Label saveState = new Label(), settingsSummary = new Label();
@@ -47,7 +47,7 @@ namespace UpsGuardian
             if (brandImage != null) sidebar.Controls.Add(new PictureBox { Image = brandImage, Bounds = new Rectangle(22, 28, 43, 43), SizeMode = PictureBoxSizeMode.Zoom });
             ViewLabel(sidebar, "UPS 守护", 76, 27, 168, 29, 16, true, Color.White);
             ViewLabel(sidebar, "本地电源保护", 77, 59, 168, 22, 8, false, Color.FromArgb(143, 162, 184));
-            string[] names = { "概览", "保护策略", "连接设置", "事件记录", "使用说明" };
+            string[] names = { "概览", "保护策略", "连接设置", "事件记录", "使用说明", "版本更新", "支持开发" };
             for (int i = 0; i < names.Length; ++i)
             {
                 int pageIndex = i;
@@ -58,7 +58,7 @@ namespace UpsGuardian
                 pages[i] = new Panel { Bounds = new Rectangle(248, 0, 892, 686), BackColor = canvas, AutoScroll = true, Visible = i == 0 };
                 Controls.Add(pages[i]);
             }
-            ViewLabel(sidebar, "后台持续监测", 24, 540, 204, 26, 10, true, Color.FromArgb(123, 210, 196));
+            ViewLabel(sidebar, "确认后开始监测", 24, 540, 204, 26, 10, true, Color.FromArgb(123, 210, 196));
             ViewLabel(sidebar, "关闭窗口后仍在托盘运行", 24, 572, 210, 42, 8.5F, false, Color.FromArgb(143, 162, 184));
             var tuck = MakeButton(sidebar, "收起到托盘", 20, 630, 208, 34, Color.FromArgb(26, 43, 62), Color.FromArgb(213, 224, 238));
             tuck.Click += delegate { Hide(); };
@@ -66,14 +66,14 @@ namespace UpsGuardian
             quit.Click += delegate { Pause(true); };
             var footer = new Panel { Bounds = new Rectangle(248, 687, 892, 37), BackColor = Color.White }; Controls.Add(footer);
             detail.SetBounds(30, 9, 610, 23); detail.Font = new Font("Microsoft YaHei UI", 8.5F); detail.ForeColor = muted; footer.Controls.Add(detail);
-            ViewLabel(footer, "每 2 秒更新", 658, 9, 216, 23, 8.5F, false, muted).TextAlign = ContentAlignment.MiddleRight;
+            ViewLabel(footer, "确认后每 2 秒更新", 658, 9, 216, 23, 8.5F, false, muted).TextAlign = ContentAlignment.MiddleRight;
 
             BuildOverview(); BuildPolicies(); BuildConnection(); BuildEvents(); BuildExtraPages(sidebar);
             foreach (Control input in new Control[] { host, upsName, unit }) input.TextChanged += delegate { MarkViewDirty(); };
             foreach (var input in new[] { port, threshold, margin, cpu, gpu, charge, runtime, countdown }) input.ValueChanged += delegate { MarkViewDirty(); };
             autoStart.CheckedChanged += delegate { MarkViewDirty(); };
             unit.SelectedIndexChanged += delegate { if (!loading) { threshold.Value = unit.SelectedIndex == 1 ? 80 : 520; margin.Value = unit.SelectedIndex == 1 ? 10 : 65; } };
-            arm.Click += delegate { if (string.IsNullOrWhiteSpace(config.Host)) Navigate(2); else if (WindowsPowerActions.IsAdministrator()) Arm(); else RelaunchElevated(); };
+            arm.Click += delegate { if (!connectionReady) Navigate(2); else if (WindowsPowerActions.IsAdministrator()) Arm(); else RelaunchElevated(); };
             pause.Click += delegate { Pause(false); }; admin.Click += delegate { RelaunchElevated(); };
             admin.Enabled = !WindowsPowerActions.IsAdministrator();
             MakeLabelsTransparent(this); Navigate(0); ResumeLayout(false);
@@ -156,24 +156,20 @@ namespace UpsGuardian
         void BuildConnection()
         {
             Panel page = pages[2]; PageHeading(page, "连接与启动", "设备连接、后台运行和系统权限");
-            connection.SetBounds(0, 96, 892, 579); connection.BackColor = canvas; page.Controls.Add(connection);
-            var endpoint = Surface(connection, 30, 0, 832, 185);
-            ViewLabel(endpoint, "UPS 服务器", 23, 18, 782, 28, 13, true, ink);
-            ViewLabel(endpoint, "通过 NUT 读取数据，不修改 UPS 的配置。", 24, 55, 780, 27, 9, false, muted);
-            ViewLabel(endpoint, "服务器地址", 24, 103, 170, 24, 9, false, muted); host.SetBounds(24, 132, 329, 31); host.AccessibleName = "UPS 服务器"; endpoint.Controls.Add(host);
-            ViewLabel(endpoint, "端口", 378, 103, 134, 24, 9, false, muted); Number(endpoint, port, 378, 132, 137, 1, 65535, "NUT 端口");
-            ViewLabel(endpoint, "设备名称", 542, 103, 240, 24, 9, false, muted); upsName.SetBounds(542, 132, 265, 31); upsName.AccessibleName = "UPS 设备名称"; endpoint.Controls.Add(upsName);
-            var behavior = Surface(connection, 30, 201, 832, 129);
+            connection.SetBounds(0, 96, 872, 850); connection.BackColor = canvas; page.Controls.Add(connection);
+            BuildDiscoverySurface();
+            var behavior = Surface(connection, 30, 467, 832, 129);
             ViewLabel(behavior, "后台运行", 23, 16, 780, 30, 13, true, ink);
             autoStart.SetBounds(24, 58, 776, 28); autoStart.Text = "登录 Windows 后自动启动"; autoStart.BackColor = Color.White; behavior.Controls.Add(autoStart);
             ViewLabel(behavior, "关闭窗口只收起到托盘。自启任务需管理员设置，初始关闭。", 25, 94, 777, 27, 9, false, muted);
-            var permissions = Surface(connection, 30, 347, 832, 161);
+            var permissions = Surface(connection, 30, 613, 832, 161);
             ViewLabel(permissions, "权限", 23, 17, 784, 28, 13, true, ink);
             permissionLabel.SetBounds(24, 54, 775, 29); permissionLabel.Font = new Font("Microsoft YaHei UI", 10F); permissionLabel.ForeColor = ink; permissions.Controls.Add(permissionLabel);
             ViewLabel(permissions, "当前版本将降功耗和休眠放在同一个保护开关内；启用该开关需管理员运行。", 24, 91, 775, 22, 9, false, muted);
             StyleButton(admin, "以管理员身份重新打开", 535, 119, 272, 31, Color.FromArgb(234, 244, 246), teal); permissions.Controls.Add(admin);
-            settingsSummary.SetBounds(35, 540, 555, 27); settingsSummary.Font = new Font("Microsoft YaHei UI", 9F); settingsSummary.ForeColor = muted; connection.Controls.Add(settingsSummary);
-            MakeButton(connection, "保存并重新连接", 647, 527, 215, 42, teal, Color.White).Click += delegate { SaveControls(true); };
+            settingsSummary.SetBounds(35, 806, 555, 27); settingsSummary.Font = new Font("Microsoft YaHei UI", 9F); settingsSummary.ForeColor = muted; connection.Controls.Add(settingsSummary);
+            saveConnectionSettings = MakeButton(connection, "保存启动设置", 647, 793, 215, 42, teal, Color.White);
+            saveConnectionSettings.Click += delegate { SaveControls(false); };
         }
 
         void BuildEvents()
@@ -230,13 +226,13 @@ namespace UpsGuardian
             bool elevated = WindowsPowerActions.IsAdministrator();
             bool showPause = config.Armed || busy || (actions != null && actions.HasRecovery);
             arm.Visible = !showPause; pause.Visible = showPause;
-            arm.Text = string.IsNullOrWhiteSpace(config.Host) ? "设置 UPS 连接" : (elevated ? "启用自动保护" : "以管理员身份打开");
-            protectionDescription.Text = config.Armed ? "规则已启用，可随时暂停并恢复本机原设置。" :
+            arm.Text = !connectionReady ? "发现并确认 UPS" : (elevated ? "启用自动保护" : "以管理员身份打开");
+            protectionDescription.Text = !connectionReady ? "确认唯一 UPS 后才开始监测，保护仍需手动开启。" : config.Armed ? "规则已启用，可随时暂停并恢复本机原设置。" :
                 (elevated ? "只读监测中，点击右侧按钮启用已保存的保护规则。" : "普通权限只读监测；提升权限后，仍需手动启用保护。" );
-            permissionLabel.Text = elevated ? "当前：管理员权限，可以启用自动保护。" : "当前：普通权限，可以连接 UPS 并查看数据。";
-            admin.Visible = !elevated;
+            permissionLabel.Text = elevated ? (connectionReady ? "当前：管理员权限，可以启用自动保护。" : "当前：管理员权限，确认 UPS 后可启用保护。") : "当前：普通权限，可以连接 UPS 并查看数据。";
+            admin.Visible = !elevated; admin.Enabled = !discoveryBusy && !busy && !config.Armed;
             cards[3].ForeColor = decision.Fresh ? (sample != null && sample.OnBattery ? Color.FromArgb(173, 104, 14) : teal) : muted;
-            if (!decision.Fresh) cards[3].Text = sample == null ? (string.IsNullOrWhiteSpace(config.Host) ? "待配置" : "连接中") : "数据已失效";
+            if (!decision.Fresh) cards[3].Text = !connectionReady ? "等待确认 UPS" : (sample == null ? "连接中" : "数据已失效");
             if (sample != null)
             {
                 sourceLabel.Text = sample.MeasuredWatts.HasValue ? "实测" : "估算";
@@ -250,7 +246,13 @@ namespace UpsGuardian
                 if (sample.ReceivedUtc > plottedAt && decision.Fresh && power.HasValue)
                 { chart.Add(sample.ReceivedUtc, power.Value, sample.NominalWatts ?? 0); plottedAt = sample.ReceivedUtc; }
             }
-            else { modelName.Text = "等待 UPS 数据"; connectionBadge.Text = config.Host; loadSummary.Text = "正在读取整体负载"; }
+            else
+            {
+                modelName.Text = "等待 UPS 数据"; connectionBadge.Text = config.Host; connectionBadge.ForeColor = muted;
+                loadSummary.Text = "正在读取整体负载"; sourceLabel.Text = "—"; sourceLabel.ForeColor = muted;
+                loadMeter.Value = batteryMeter.Value = 0;
+                for (int i = 0; i < 3; ++i) { cards[i].Text = "—"; cards[i].ForeColor = muted; }
+            }
             tips.SetToolTip(notice, notice.Text);
             UpdateRuleDescriptions();
         }
@@ -317,6 +319,44 @@ namespace UpsGuardian
             if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -4, -4));
         }
     }
+    sealed class LanguageMenuColors : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground { get { return Color.FromArgb(26, 43, 62); } }
+        public override Color MenuBorder { get { return Color.FromArgb(49, 68, 83); } }
+        public override Color MenuItemBorder { get { return Color.FromArgb(37, 68, 85); } }
+        public override Color MenuItemSelected { get { return Color.FromArgb(37, 68, 85); } }
+        public override Color ImageMarginGradientBegin { get { return ToolStripDropDownBackground; } }
+        public override Color ImageMarginGradientMiddle { get { return ToolStripDropDownBackground; } }
+        public override Color ImageMarginGradientEnd { get { return ToolStripDropDownBackground; } }
+        public override Color CheckBackground { get { return Color.FromArgb(13, 148, 136); } }
+        public override Color CheckSelectedBackground { get { return CheckBackground; } }
+        public override Color SeparatorDark { get { return MenuBorder; } }
+        public override Color SeparatorLight { get { return ToolStripDropDownBackground; } }
+    }
+    sealed class LanguageButton : ModernButton
+    {
+        bool hover;
+        protected override void OnMouseEnter(EventArgs e) { hover = true; base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { hover = false; base.OnMouseLeave(e); }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(Parent == null ? BackColor : Parent.BackColor);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            float s = e.Graphics.DpiX / 96F, cy = Height / 2F;
+            using (var path = ViewDrawing.Round(new RectangleF(0, 0, Width - 1, Height - 1), 8 * s))
+            using (var fill = new SolidBrush(hover ? Color.FromArgb(37, 68, 85) : BackColor)) e.Graphics.FillPath(fill, path);
+            using (var pen = new Pen(ForeColor, 1.2F * s))
+            {
+                e.Graphics.DrawEllipse(pen, 10 * s, cy - 8 * s, 16 * s, 16 * s);
+                e.Graphics.DrawEllipse(pen, 14 * s, cy - 8 * s, 8 * s, 16 * s);
+                e.Graphics.DrawLine(pen, 10 * s, cy, 26 * s, cy);
+                e.Graphics.DrawLines(pen, new[] { new PointF(Width - 15 * s, cy + 2 * s), new PointF(Width - 11 * s, cy - 2 * s), new PointF(Width - 7 * s, cy + 2 * s) });
+            }
+            TextRenderer.DrawText(e.Graphics, Text, Font, new Rectangle((int)(32 * s), 0, Width - (int)(51 * s), Height),
+                ForeColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -4, -4));
+        }
+    }
     sealed class NavButton : ModernButton
     {
         public bool Selected; public int Symbol;
@@ -332,7 +372,42 @@ namespace UpsGuardian
                 if (Symbol == 0) { for (int i = 0; i < 4; ++i) e.Graphics.DrawRectangle(pen, x + i % 2 * 10 * s, y + i / 2 * 10 * s, 6 * s, 6 * s); }
                 else if (Symbol == 1) { e.Graphics.DrawPolygon(pen, new[] { new PointF(x, y), new PointF(x + 16 * s, y), new PointF(x + 14 * s, y + 12 * s), new PointF(x + 8 * s, y + 18 * s), new PointF(x + 2 * s, y + 12 * s) }); }
                 else if (Symbol == 2) { for (int i = 0; i < 3; ++i) { e.Graphics.DrawLine(pen, x, y + i * 7 * s, x + 17 * s, y + i * 7 * s); e.Graphics.DrawEllipse(pen, x + (i % 2 == 0 ? 4 : 10) * s, y + i * 7 * s - 2 * s, 4 * s, 4 * s); } }
-                else { for (int i = 0; i < 3; ++i) e.Graphics.DrawLine(pen, x, y + i * 7 * s, x + (i == 2 ? 11 : 17) * s, y + i * 7 * s); }
+                else if (Symbol == 3)
+                {
+                    e.Graphics.DrawRectangle(pen, x + s, y, 16 * s, 18 * s);
+                    for (int i = 0; i < 3; ++i)
+                        e.Graphics.DrawLine(pen, x + 5 * s, y + (5 + i * 4) * s, x + 13 * s, y + (5 + i * 4) * s);
+                }
+                else if (Symbol == 4)
+                {
+                    using (var book = new GraphicsPath())
+                    {
+                        book.AddBezier(x, y + 2 * s, x + 4 * s, y, x + 7 * s, y + s, x + 9 * s, y + 3 * s);
+                        book.AddBezier(x + 9 * s, y + 3 * s, x + 11 * s, y + s, x + 14 * s, y, x + 18 * s, y + 2 * s);
+                        book.AddLine(x + 18 * s, y + 2 * s, x + 18 * s, y + 17 * s);
+                        book.AddBezier(x + 18 * s, y + 17 * s, x + 14 * s, y + 15 * s, x + 11 * s, y + 16 * s, x + 9 * s, y + 18 * s);
+                        book.AddBezier(x + 9 * s, y + 18 * s, x + 7 * s, y + 16 * s, x + 4 * s, y + 15 * s, x, y + 17 * s);
+                        book.CloseFigure(); e.Graphics.DrawPath(pen, book);
+                    }
+                    e.Graphics.DrawLine(pen, x + 9 * s, y + 3 * s, x + 9 * s, y + 18 * s);
+                }
+                else if (Symbol == 5)
+                {
+                    e.Graphics.DrawLine(pen, x + 9 * s, y, x + 9 * s, y + 13 * s);
+                    e.Graphics.DrawLines(pen, new[] { new PointF(x + 4 * s, y + 8 * s), new PointF(x + 9 * s, y + 13 * s), new PointF(x + 14 * s, y + 8 * s) });
+                    e.Graphics.DrawLines(pen, new[] { new PointF(x + s, y + 14 * s), new PointF(x + s, y + 18 * s), new PointF(x + 17 * s, y + 18 * s), new PointF(x + 17 * s, y + 14 * s) });
+                }
+                else if (Symbol == 6)
+                {
+                    using (var heart = new GraphicsPath())
+                    {
+                        heart.AddBezier(x + 9 * s, y + 18 * s, x + 6 * s, y + 15 * s, x, y + 10 * s, x, y + 5 * s);
+                        heart.AddBezier(x, y + 5 * s, x, y, x + 6 * s, y - s, x + 9 * s, y + 4 * s);
+                        heart.AddBezier(x + 9 * s, y + 4 * s, x + 12 * s, y - s, x + 18 * s, y, x + 18 * s, y + 5 * s);
+                        heart.AddBezier(x + 18 * s, y + 5 * s, x + 18 * s, y + 10 * s, x + 12 * s, y + 15 * s, x + 9 * s, y + 18 * s);
+                        heart.CloseFigure(); e.Graphics.DrawPath(pen, heart);
+                    }
+                }
             }
             TextRenderer.DrawText(e.Graphics, Text, Font, new Rectangle((int)(47 * s), 0, Width - (int)(50 * s), Height), Selected ? Color.White : ForeColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
             if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -4, -4));

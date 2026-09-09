@@ -27,4 +27,13 @@ $guiLog = Join-Path $testDirectory 'GuiLifecycleCheck.log'
 & $guiTestExecutable *> $guiLog
 if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $guiLog -Tail 60; throw 'GUI lifecycle test failed' }
 Write-Output "GuiLifecycleCheck: $(Get-Content -LiteralPath $guiLog -Tail 1)"
+$discoveryTestDirectory = Join-Path $testDirectory ('discovery-' + [Guid]::NewGuid().ToString('N'))
+& (Join-Path $projectDirectory 'build.ps1') -OutputDirectory $discoveryTestDirectory
+$discoveryTestExecutable = Join-Path $discoveryTestDirectory 'DiscoveryUiCheck.exe'
+& $compiler /nologo /target:exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$discoveryTestExecutable" (Join-Path $projectDirectory 'tests\DiscoveryUiCheck.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Discovery UI test compile failed' }
+$discoveryLog = Join-Path $testDirectory 'DiscoveryUiCheck.log'
+& $discoveryTestExecutable *> $discoveryLog
+if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $discoveryLog -Tail 80; throw 'Discovery UI test failed' }
+Write-Output "DiscoveryUiCheck: $(Get-Content -LiteralPath $discoveryLog -Tail 1)"
 Write-Output 'All simulated and GUI lifecycle tests passed. No power limits or sleep operations were invoked.'

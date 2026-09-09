@@ -7,12 +7,13 @@ namespace UpsGuardian
 {
     public sealed class GuardSettings
     {
-        // A new profile starts unconfigured. The Windows UI must not poll
-        // until the user supplies a NUT host; an empty value remains valid so
+        // A new profile starts unconfirmed. The Windows UI must not poll
+        // until a discovered UPS is selected and verified; an empty host remains valid so
         // settings can be saved while setup is incomplete.
         public string Host = "";
         public int Port = 3493;
         public string UpsName = "ups";
+        public bool ConnectionConfirmed = false;
         public bool Armed = false;
         public bool UsePercent = true;
         public double LoadThreshold = 80;
@@ -30,6 +31,8 @@ namespace UpsGuardian
         public int StaleSeconds = 12;
         public bool StartAtLogon = false;
         public bool AboveRatingAccepted = false;
+
+        public GuardSettings Copy() { return (GuardSettings)MemberwiseClone(); }
 
         private static readonly Regex HostPattern = new Regex(
             @"^[A-Za-z0-9][A-Za-z0-9._:%-]{0,252}\z",

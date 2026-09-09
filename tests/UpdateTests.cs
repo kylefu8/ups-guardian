@@ -16,6 +16,9 @@ internal static class UpdateTests
         Run("manifest-asset-selection", ManifestAssetSelection);
         Run("stable-channel-excludes-prerelease", StableChannelExcludesPrerelease);
         Run("checksum-rejects-wrong-hash", ChecksumRejectsWrongHash);
+        Run("preflight-failures-restart-original", PreflightFailuresRestartOriginal);
+        Run("recovery-start-failure-preserves-original", RecoveryStartFailurePreservesOriginal);
+        Run("incomplete-original-is-not-started", IncompleteOriginalIsNotStarted);
         Run("archive-accepts-only-runtime-files", ArchiveAcceptsOnlyRuntimeFiles);
         Run("archive-rejects-zip-slip-data-and-case-collision", ArchiveRejectsUnsafeNames);
         Run("transaction-rolls-back-on-replacement-failure", TransactionRollsBack);
@@ -123,10 +126,12 @@ internal static class UpdateTests
             File.WriteAllText(main, "old-main", Encoding.UTF8);
             File.WriteAllText(updater, "old-updater", Encoding.UTF8);
             File.WriteAllText(settings, "keep-settings", Encoding.UTF8);
+            bool recoveredStarted = false;
             Exception failure = null;
             try
             {
-                WindowsUpdateInstaller.ApplyPackageForTests(new StagedUpdate(package, Hash(package), "0.2.0"), target, false, true, true);
+                WindowsUpdateInstaller.ApplyPackageForTests(new StagedUpdate(package, Hash(package), "0.2.0"), target, true, true, true,
+                    delegate(string recoveredTarget) { recoveredStarted = true; });
             }
             catch (Exception ex) { failure = ex; }
             UpdateRollbackException rollbackFailure = failure as UpdateRollbackException;
@@ -134,11 +139,148 @@ internal static class UpdateTests
             Assert(!String.IsNullOrEmpty(rollbackFailure.BackupDirectory) && Directory.Exists(rollbackFailure.BackupDirectory), "uncertain rollback preserves the backup directory");
             Assert(File.ReadAllText(Path.Combine(rollbackFailure.BackupDirectory, "UPSGuardian.exe"), Encoding.UTF8) == "old-main", "preserved backup contains the original executable");
             Assert(File.ReadAllText(settings, Encoding.UTF8) == "keep-settings", "portable data remains untouched");
+            Assert(!recoveredStarted, "uncertain rollback never starts the recovered application");
         }
         finally
         {
             DeleteDirectory(directory);
         }
+    }
+
+    private static void PreflightFailuresRestartOriginal()
+    {
+        AssertPreflightRecovery("checksum", delegate(string package, string target, Action<string> recovered)
+        {
+            Exception failure = null;
+            try
+            {
+                WindowsUpdateInstaller.ApplyPackageForTests(
+                    new StagedUpdate(package, new String('0', 64), "0.2.0"), target, true, false, false, recovered);
+            }
+            catch (Exception ex) { failure = ex; }
+            Assert(failure is InvalidDataException && failure.Message.IndexOf("SHA-256", StringComparison.OrdinalIgnoreCase) >= 0,
+                "checksum failure is still reported");
+        }, "checksum failure restarts the original application");
+
+        AssertPreflightRecovery("archive", delegate(string package, string target, Action<string> recovered)
+        {
+            Exception failure = null;
+            try
+            {
+                WindowsUpdateInstaller.ApplyPackageForTests(
+                    new StagedUpdate(package, Hash(package), "0.2.0"), target, true, false, false, recovered);
+            }
+            catch (Exception ex) { failure = ex; }
+            Assert(failure is InvalidDataException && failure.Message.IndexOf("update package", StringComparison.OrdinalIgnoreCase) >= 0,
+                "invalid archive failure is still reported");
+        }, "invalid archive failure restarts the original application");
+
+        string directory = NewDirectory();
+        try
+        {
+            string package = CreatePackage(directory, "0.2.0", "new-main", "new-updater", true);
+            string target = PrepareInstalledRuntime(directory);
+            Directory.CreateDirectory(Path.Combine(target, "README.md"));
+            bool recoveredStarted = false;
+            Exception failure = null;
+            try
+            {
+                WindowsUpdateInstaller.ApplyPackageForTests(
+                    new StagedUpdate(package, Hash(package), "0.2.0"), target, true, false, false,
+                    delegate(string recoveredTarget) { recoveredStarted = String.Equals(recoveredTarget, target, StringComparison.OrdinalIgnoreCase); });
+            }
+            catch (Exception ex) { failure = ex; }
+            Assert(failure is IOException && failure.Message.IndexOf("target is a directory", StringComparison.OrdinalIgnoreCase) >= 0,
+                "backup preflight failure is still reported");
+            Assert(recoveredStarted, "backup preflight failure restarts the original application");
+            Assert(File.ReadAllText(Path.Combine(target, "UPSGuardian.exe"), Encoding.UTF8) == "old-main",
+                "backup preflight failure leaves the original executable intact");
+        }
+        finally { DeleteDirectory(directory); }
+    }
+
+    private static void RecoveryStartFailurePreservesOriginal()
+    {
+        string directory = NewDirectory();
+        try
+        {
+            string package = CreatePackage(directory, "0.2.0", "new-main", "new-updater");
+            string target = PrepareInstalledRuntime(directory);
+            Exception failure = null;
+            try
+            {
+                WindowsUpdateInstaller.ApplyPackageForTests(
+                    new StagedUpdate(package, new String('0', 64), "0.2.0"), target, true, false, false,
+                    delegate(string recoveredTarget) { throw new InvalidOperationException("simulated recovery start failure"); });
+            }
+            catch (Exception ex) { failure = ex; }
+            Assert(failure is IOException, "recovery start failure is surfaced as an update error");
+            Assert(failure.Message.IndexOf("SHA-256", StringComparison.OrdinalIgnoreCase) >= 0,
+                "recovery start failure preserves the original update error");
+            Assert(failure.InnerException is AggregateException,
+                "recovery start failure retains both failure causes");
+        }
+        finally { DeleteDirectory(directory); }
+    }
+
+    private static void IncompleteOriginalIsNotStarted()
+    {
+        string directory = NewDirectory();
+        try
+        {
+            string package = CreatePackage(directory, "0.2.0", "new-main", "new-updater");
+            string target = Path.Combine(directory, "install");
+            Directory.CreateDirectory(target);
+            File.WriteAllText(Path.Combine(target, "UPSGuardian.exe"), "old-main", Encoding.UTF8);
+            bool recoveredStarted = false;
+            Exception failure = null;
+            try
+            {
+                WindowsUpdateInstaller.ApplyPackageForTests(
+                    new StagedUpdate(package, new String('0', 64), "0.2.0"), target, true, false, false,
+                    delegate(string recoveredTarget) { recoveredStarted = true; });
+            }
+            catch (Exception ex) { failure = ex; }
+            Assert(failure is FileNotFoundException, "incomplete original installation is reported");
+            Assert(!recoveredStarted, "incomplete original installation is never started");
+        }
+        finally { DeleteDirectory(directory); }
+    }
+
+    private static void AssertPreflightRecovery(string kind, Action<string, string, Action<string>> run, string message)
+    {
+        string directory = NewDirectory();
+        try
+        {
+            string package = kind == "checksum"
+                ? CreatePackage(directory, "0.2.0", "new-main", "new-updater")
+                : CreatePackage(directory, "0.2.0", "new-main", "new-updater", false, "data/settings.xml");
+            string target = PrepareInstalledRuntime(directory);
+            bool recoveredStarted = false;
+            run(package, target, delegate(string recoveredTarget)
+            {
+                recoveredStarted = String.Equals(recoveredTarget, target, StringComparison.OrdinalIgnoreCase);
+            });
+            Assert(recoveredStarted, message);
+            Assert(File.ReadAllText(Path.Combine(target, "UPSGuardian.exe"), Encoding.UTF8) == "old-main",
+                "preflight failure leaves the original executable intact");
+            Assert(File.ReadAllText(Path.Combine(target, "UPSGuardian.Updater.exe"), Encoding.UTF8) == "old-updater",
+                "preflight failure leaves the original updater intact");
+            Assert(Directory.GetDirectories(target, ".upsguardian-install-*", SearchOption.TopDirectoryOnly).Length == 0,
+                "preflight failure cleans the package staging directory");
+            Assert(Directory.GetDirectories(target, ".upsguardian-backup-*", SearchOption.TopDirectoryOnly).Length == 0,
+                "preflight failure cleans the unused backup directory");
+        }
+        finally { DeleteDirectory(directory); }
+    }
+
+    private static string PrepareInstalledRuntime(string directory)
+    {
+        string target = Path.Combine(directory, "install");
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "UPSGuardian.exe"), "old-main", Encoding.UTF8);
+        File.WriteAllText(Path.Combine(target, "UPSGuardian.Updater.exe"), "old-updater", Encoding.UTF8);
+        return target;
     }
 
     private static void VerifiedRollbackRemovesBackup()

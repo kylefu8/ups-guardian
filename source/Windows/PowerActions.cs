@@ -211,16 +211,32 @@ namespace UpsGuardian
 
             List<string> messages = new List<string>();
             bool safe = true;
+
             try
             {
                 RestoreCpu(_recovery, messages, ref safe);
-                if (_recovery.GpuManaged)
-                    RestoreGpu(_recovery, messages, ref safe);
             }
             catch (Exception ex)
             {
                 safe = false;
-                messages.Add("恢复失败：" + ex.Message);
+                messages.Add("CPU 恢复失败：" + ex.Message);
+            }
+
+            // CPU and GPU are independent controls.  A failure while reading
+            // or restoring one must not prevent the other from being brought
+            // back to its owned value.  Keep the recovery file whenever any
+            // part is uncertain so a later explicit retry can finish it.
+            if (_recovery != null && _recovery.GpuManaged)
+            {
+                try
+                {
+                    RestoreGpu(_recovery, messages, ref safe);
+                }
+                catch (Exception ex)
+                {
+                    safe = false;
+                    messages.Add("GPU 恢复失败：" + ex.Message);
+                }
             }
 
             if (!safe)

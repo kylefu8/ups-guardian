@@ -21,6 +21,8 @@ internal static class PowerActionsTests
         public bool FailGpuAfterMutation;
         public bool FailGpuBeforeMutation;
         public bool FailGpuRead;
+        public bool FailCpuRead;
+        public bool FailCpuAfterMutation;
         public readonly List<string> Calls = new List<string>();
 
         bool IPowerActionsBackend.IsAdministrator { get { return IsAdministrator; } }
@@ -34,6 +36,8 @@ internal static class PowerActionsTests
         int IPowerActionsBackend.ReadCpuMaximum(Guid scheme)
         {
             Calls.Add("read-cpu");
+            if (FailCpuRead)
+                throw new IOException("fake CPU read failed");
             if (scheme != Scheme)
                 throw new InvalidOperationException("unexpected scheme");
             return CpuMaximum;
@@ -46,6 +50,11 @@ internal static class PowerActionsTests
             if (scheme != Scheme)
                 throw new InvalidOperationException("unexpected scheme");
             CpuMaximum = value;
+            if (FailCpuAfterMutation)
+            {
+                FailCpuAfterMutation = false;
+                throw new IOException("fake CPU write failed after mutation");
+            }
         }
 
         void IPowerActionsBackend.RefreshActiveScheme(Guid scheme)
@@ -117,6 +126,8 @@ internal static class PowerActionsTests
         Run("rollback-after-second-action-fail", RollbackAfterSecondActionFail);
         Run("restore-old-settings", RestoreOldSettings);
         Run("failure-preserves-recovery", FailurePreservesRecovery);
+        Run("cpu-failure-does-not-block-gpu-recovery", CpuFailureDoesNotBlockGpuRecovery);
+        Run("cpu-read-failure-does-not-block-gpu-recovery", CpuReadFailureDoesNotBlockGpuRecovery);
         Console.WriteLine("Passed " + _passed.ToString(CultureInfo.InvariantCulture) + " PowerActions tests.");
         return 0;
     }
@@ -307,8 +318,67 @@ internal static class PowerActionsTests
             actions.Reduce(50, 200);
             backend.FailGpuBeforeMutation = true;
             AssertThrows(delegate { actions.Restore(); }, "restore failure must be reported");
+            Assert(backend.CpuMaximum == 100, "CPU must be restored even when GPU restore fails");
             Assert(File.Exists(backend.RecoveryPath), "failed restore must preserve recovery");
             Assert(actions.HasRecovery, "failed restore must retain recovery state");
+        }
+        finally { DeleteDirectory(directory); }
+    }
+
+    private static void CpuFailureDoesNotBlockGpuRecovery()
+    {
+        string directory = NewDirectory();
+        try
+        {
+            FakeBackend backend = NewBackend(directory);
+            WindowsPowerActions actions = new WindowsPowerActions(directory, backend);
+            actions.Reduce(50, 200);
+            backend.FailCpuAfterMutation = true;
+
+            AssertThrows(delegate { actions.Restore(); }, "CPU restore failure must be reported");
+            Assert(backend.CpuMaximum == 100, "CPU must retain the restored value after an uncertain write");
+            Assert(NearlyEqual(backend.GpuPower, 285), "GPU must still be restored when CPU restore fails");
+            Assert(File.Exists(backend.RecoveryPath), "partial restore must preserve recovery");
+            Assert(actions.HasRecovery, "partial restore must retain recovery state");
+            Assert(actions.RecoverySummary.IndexOf("CPU 恢复失败", StringComparison.Ordinal) >= 0,
+                "aggregated restore error must identify the CPU failure");
+
+            actions.Restore();
+            Assert(backend.CpuMaximum == 100 && NearlyEqual(backend.GpuPower, 285), "retry must see both controls restored");
+            Assert(!actions.HasRecovery && !File.Exists(backend.RecoveryPath), "successful retry must clear recovery");
+        }
+        finally { DeleteDirectory(directory); }
+    }
+
+    private static void CpuReadFailureDoesNotBlockGpuRecovery()
+    {
+        string directory = NewDirectory();
+        try
+        {
+            FakeBackend backend = NewBackend(directory);
+            WindowsPowerActions actions = new WindowsPowerActions(directory, backend);
+            actions.Reduce(50, 200);
+            backend.FailCpuRead = true;
+
+            AssertThrows(delegate { actions.Restore(); }, "CPU read failure must be reported");
+            Assert(backend.CpuMaximum == 50, "CPU must remain limited when its restore read fails");
+            Assert(NearlyEqual(backend.GpuPower, 285), "GPU must still be restored after CPU read failure");
+            Assert(File.Exists(backend.RecoveryPath), "CPU read failure must preserve recovery");
+            Assert(actions.HasRecovery, "CPU read failure must retain recovery state");
+
+            backend.FailGpuRead = true;
+            AssertThrows(delegate { actions.Restore(); }, "independent CPU and GPU failures must be reported");
+            Assert(actions.RecoverySummary.IndexOf("CPU 恢复失败", StringComparison.Ordinal) >= 0 &&
+                actions.RecoverySummary.IndexOf("GPU 恢复失败", StringComparison.Ordinal) >= 0,
+                "restore summary must aggregate independent CPU and GPU failures");
+
+            backend.FailCpuRead = false;
+            backend.FailGpuRead = false;
+            WindowsPowerActions retry = new WindowsPowerActions(directory, backend);
+            Assert(retry.HasRecovery, "a restarted action must load the pending recovery");
+            retry.Restore();
+            Assert(backend.CpuMaximum == 100 && NearlyEqual(backend.GpuPower, 285), "retry must restore both controls");
+            Assert(!retry.HasRecovery && !File.Exists(backend.RecoveryPath), "successful retry must clear recovery");
         }
         finally { DeleteDirectory(directory); }
     }

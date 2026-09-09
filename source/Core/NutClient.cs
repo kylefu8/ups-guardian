@@ -6,6 +6,7 @@ using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 namespace UpsGuardian
 {
@@ -70,6 +71,19 @@ namespace UpsGuardian
         }
     }
 
+    /// <summary>One UPS entry returned by a NUT LIST UPS request.</summary>
+    public sealed class NutUpsInfo
+    {
+        public NutUpsInfo(string upsName, string description)
+        {
+            UpsName = upsName;
+            Description = description ?? "";
+        }
+
+        public string UpsName { get; private set; }
+        public string Description { get; private set; }
+    }
+
     /// <summary>Indicates a malformed or rejected NUT protocol response.</summary>
     public sealed class NutException : IOException
     {
@@ -99,19 +113,70 @@ namespace UpsGuardian
         /// </summary>
         public static NutSnapshot Read(string host, int port, string upsName, int timeoutMs)
         {
+            return Read(host, port, upsName, timeoutMs, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Connects once, sends LIST VAR, and reads one complete response with
+        /// a single deadline. Cancellation is checked during connect, send and
+        /// receive; no UPS mutation or credentials are used.
+        /// </summary>
+        public static NutSnapshot Read(string host, int port, string upsName, int timeoutMs, CancellationToken cancellationToken)
+        {
             ValidateArguments(host, port, upsName, timeoutMs);
+            cancellationToken.ThrowIfCancellationRequested();
             long deadline = Deadline(timeoutMs);
             TcpClient client = new TcpClient();
             try
             {
-                Connect(client, host, port, deadline);
+                Connect(client, host, port, deadline, cancellationToken);
                 Socket socket = client.Client;
                 NetworkStream stream = client.GetStream();
                 string command = "LIST VAR " + upsName + "\n";
                 byte[] commandBytes = Encoding.ASCII.GetBytes(command);
-                WriteCommand(stream, socket, commandBytes, deadline);
-                Dictionary<string, string> variables = ReadResponse(stream, socket, upsName, deadline);
+                WriteCommand(stream, socket, commandBytes, deadline, cancellationToken);
+                Dictionary<string, string> variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                bool began = false;
+                ReadResponse(stream, socket, deadline, cancellationToken,
+                    delegate(string line) { return ParseLine(line, upsName, variables, ref began); });
+                cancellationToken.ThrowIfCancellationRequested();
                 return new NutSnapshot(variables, DateTime.UtcNow);
+            }
+            finally
+            {
+                client.Close();
+            }
+        }
+
+        /// <summary>Enumerates UPS names and descriptions using LIST UPS.</summary>
+        public static IList<NutUpsInfo> ListUps(string host, int port, int timeoutMs)
+        {
+            return ListUps(host, port, timeoutMs, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Enumerates UPS names and descriptions using LIST UPS with one
+        /// bounded deadline. The response is read-only and strictly framed.
+        /// </summary>
+        public static IList<NutUpsInfo> ListUps(string host, int port, int timeoutMs, CancellationToken cancellationToken)
+        {
+            ValidateEndpointArguments(host, port, timeoutMs);
+            cancellationToken.ThrowIfCancellationRequested();
+            long deadline = Deadline(timeoutMs);
+            TcpClient client = new TcpClient();
+            try
+            {
+                Connect(client, host, port, deadline, cancellationToken);
+                Socket socket = client.Client;
+                NetworkStream stream = client.GetStream();
+                byte[] commandBytes = Encoding.ASCII.GetBytes("LIST UPS\n");
+                WriteCommand(stream, socket, commandBytes, deadline, cancellationToken);
+                List<NutUpsInfo> result = new List<NutUpsInfo>();
+                bool began = false;
+                ReadResponse(stream, socket, deadline, cancellationToken,
+                    delegate(string line) { return ParseUpsLine(line, result, ref began); });
+                cancellationToken.ThrowIfCancellationRequested();
+                return result;
             }
             finally
             {
@@ -121,14 +186,24 @@ namespace UpsGuardian
 
         private static void ValidateArguments(string host, int port, string upsName, int timeoutMs)
         {
-            if (String.IsNullOrEmpty(host) || host.Length > MaxHostLength || !HostPattern.IsMatch(host))
+            ValidateEndpointArguments(host, port, timeoutMs);
+            if (String.IsNullOrEmpty(upsName) || upsName.Length > MaxUpsNameLength || !UpsNamePattern.IsMatch(upsName))
+                throw new ArgumentException("upsName must be a non-empty ASCII NUT name (1-64 safe characters).", "upsName");
+        }
+
+        private static void ValidateEndpointArguments(string host, int port, int timeoutMs)
+        {
+            if (!IsValidHost(host))
                 throw new ArgumentException("host must be a non-empty ASCII hostname or address (1-253 safe characters).", "host");
             if (port < 1 || port > 65535)
                 throw new ArgumentOutOfRangeException("port", "port must be between 1 and 65535.");
-            if (String.IsNullOrEmpty(upsName) || upsName.Length > MaxUpsNameLength || !UpsNamePattern.IsMatch(upsName))
-                throw new ArgumentException("upsName must be a non-empty ASCII NUT name (1-64 safe characters).", "upsName");
             if (timeoutMs < 1)
                 throw new ArgumentOutOfRangeException("timeoutMs", "timeoutMs must be positive.");
+        }
+
+        internal static bool IsValidHost(string host)
+        {
+            return !String.IsNullOrEmpty(host) && host.Length <= MaxHostLength && HostPattern.IsMatch(host);
         }
 
         private static long Deadline(int timeoutMs)
@@ -148,19 +223,32 @@ namespace UpsGuardian
             return Math.Max(1, (int)Math.Ceiling(milliseconds));
         }
 
-        private static void Connect(TcpClient client, string host, int port, long deadline)
+        private const int CancellationSliceMilliseconds = 100;
+
+        private static void Connect(TcpClient client, string host, int port, long deadline, CancellationToken cancellationToken)
         {
             IAsyncResult result = null;
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 result = client.BeginConnect(host, port, null, null);
-                int remaining = RemainingMilliseconds(deadline);
-                if (remaining == 0 || !result.AsyncWaitHandle.WaitOne(remaining))
-                    throw new TimeoutException("Timed out connecting to NUT server " + host + ":" + port + ".");
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    int remaining = RemainingMilliseconds(deadline);
+                    if (remaining == 0)
+                        throw new TimeoutException("Timed out connecting to NUT server " + host + ":" + port + ".");
+                    if (result.AsyncWaitHandle.WaitOne(Math.Min(remaining, CancellationSliceMilliseconds)))
+                        break;
+                }
                 client.EndConnect(result);
                 client.NoDelay = true;
             }
             catch (TimeoutException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
             {
                 throw;
             }
@@ -175,20 +263,27 @@ namespace UpsGuardian
             }
         }
 
-        private static void WriteCommand(NetworkStream stream, Socket socket, byte[] bytes, long deadline)
+        private static void WriteCommand(NetworkStream stream, Socket socket, byte[] bytes, long deadline, CancellationToken cancellationToken)
         {
-            int remaining = RemainingMilliseconds(deadline);
-            if (remaining == 0)
-                throw new TimeoutException("Timed out before sending NUT request.");
-            socket.SendTimeout = remaining;
-            if (!socket.Poll(PollMicroseconds(remaining), SelectMode.SelectWrite))
-                throw new TimeoutException("Timed out sending NUT request.");
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int remaining = RemainingMilliseconds(deadline);
+                if (remaining == 0)
+                    throw new TimeoutException("Timed out before sending NUT request.");
+                int slice = Math.Min(remaining, CancellationSliceMilliseconds);
+                socket.SendTimeout = slice;
+                if (socket.Poll(PollMicroseconds(slice), SelectMode.SelectWrite))
+                    break;
+            }
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 stream.Write(bytes, 0, bytes.Length);
             }
             catch (IOException ex)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (RemainingMilliseconds(deadline) == 0)
                     throw new TimeoutException("Timed out sending NUT request.", ex);
                 throw new NutException("Could not send NUT request.", ex);
@@ -201,21 +296,21 @@ namespace UpsGuardian
             return microseconds >= Int32.MaxValue ? Int32.MaxValue : (int)microseconds;
         }
 
-        private static Dictionary<string, string> ReadResponse(NetworkStream stream, Socket socket, string upsName, long deadline)
+        private static void ReadResponse(NetworkStream stream, Socket socket, long deadline,
+            CancellationToken cancellationToken, Func<string, bool> parseLine)
         {
-            Dictionary<string, string> variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             byte[] buffer = new byte[4096];
             List<byte> lineBytes = new List<byte>();
             int totalBytes = 0;
             int lineCount = 0;
-            bool began = false;
 
             while (true)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 int remaining = RemainingMilliseconds(deadline);
                 if (remaining == 0)
                     throw new TimeoutException("Timed out reading NUT response.");
-                socket.ReceiveTimeout = remaining;
+                socket.ReceiveTimeout = Math.Min(remaining, CancellationSliceMilliseconds);
                 int read;
                 try
                 {
@@ -223,6 +318,13 @@ namespace UpsGuardian
                 }
                 catch (IOException ex)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (IsSocketTimeout(ex))
+                    {
+                        if (RemainingMilliseconds(deadline) == 0)
+                            throw new TimeoutException("Timed out reading NUT response.", ex);
+                        continue;
+                    }
                     if (RemainingMilliseconds(deadline) == 0 || IsSocketTimeout(ex))
                         throw new TimeoutException("Timed out reading NUT response.", ex);
                     throw new NutException("Could not read NUT response.", ex);
@@ -235,6 +337,7 @@ namespace UpsGuardian
 
                 for (int i = 0; i < read; i++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     byte value = buffer[i];
                     if (value == (byte)'\n')
                     {
@@ -243,9 +346,9 @@ namespace UpsGuardian
                             throw new NutException("NUT response exceeded the 512-line safety limit.");
                         string line = DecodeLine(lineBytes);
                         lineBytes.Clear();
-                        bool end = ParseLine(line, upsName, variables, ref began);
+                        bool end = parseLine(line);
                         if (end)
-                            return variables;
+                            return;
                     }
                     else
                     {
@@ -259,7 +362,8 @@ namespace UpsGuardian
 
         private static bool IsSocketTimeout(IOException exception)
         {
-            SocketException socketException = exception.InnerException as SocketException;
+            Exception source = exception;
+            SocketException socketException = source as SocketException ?? exception.InnerException as SocketException;
             return socketException != null &&
                 (socketException.SocketErrorCode == SocketError.TimedOut ||
                  socketException.SocketErrorCode == SocketError.WouldBlock);
@@ -310,6 +414,43 @@ namespace UpsGuardian
                 throw new NutException("Malformed NUT variable name.");
             variables[tokens[2].Text] = tokens[3].Text;
             return false;
+        }
+
+        private static bool ParseUpsLine(string line, List<NutUpsInfo> ups, ref bool began)
+        {
+            List<Token> tokens = Tokenize(line);
+            if (tokens.Count == 0)
+                throw new NutException("NUT response contained an unexpected blank line.");
+            if (String.Equals(tokens[0].Text, "ERR", StringComparison.Ordinal))
+                throw new NutException("NUT server returned ERR " + line.Trim() + ". Check the NUT access whitelist.");
+
+            if (!began)
+            {
+                RequireCommand(tokens, "BEGIN", "LIST", "UPS", "BEGIN LIST UPS");
+                began = true;
+                return false;
+            }
+
+            if (String.Equals(tokens[0].Text, "END", StringComparison.Ordinal))
+            {
+                RequireCommand(tokens, "END", "LIST", "UPS", "END LIST UPS");
+                return true;
+            }
+
+            if (tokens.Count != 3 || !String.Equals(tokens[0].Text, "UPS", StringComparison.Ordinal) ||
+                tokens[1].Quoted || !tokens[2].Quoted || String.IsNullOrEmpty(tokens[1].Text) ||
+                tokens[1].Text.Length > MaxUpsNameLength || !UpsNamePattern.IsMatch(tokens[1].Text))
+                throw new NutException("Malformed NUT UPS line; expected UPS <name> \"<description>\".");
+            ups.Add(new NutUpsInfo(tokens[1].Text, tokens[2].Text));
+            return false;
+        }
+
+        private static void RequireCommand(List<Token> tokens, string first, string second, string third, string expected)
+        {
+            if (tokens.Count != 3 || !String.Equals(tokens[0].Text, first, StringComparison.Ordinal) ||
+                !String.Equals(tokens[1].Text, second, StringComparison.Ordinal) ||
+                !String.Equals(tokens[2].Text, third, StringComparison.Ordinal))
+                throw new NutException("Malformed NUT response; expected " + expected + ".");
         }
 
         private static void RequireCommand(List<Token> tokens, string first, string second, string third, string fourth, string expected)

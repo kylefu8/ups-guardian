@@ -90,7 +90,7 @@ namespace UpsGuardian
 
         internal static void ApplyPackage(StagedUpdate update, string installDirectory, bool restartApplication)
         {
-            ApplyPackageCore(update, installDirectory, restartApplication, false, false);
+            ApplyPackageCore(update, installDirectory, restartApplication, false, false, StartRecoveredApplication);
         }
 
         // Test-only seam. It injects failures after replacement and during
@@ -99,37 +99,60 @@ namespace UpsGuardian
         internal static void ApplyPackageForTests(StagedUpdate update, string installDirectory, bool restartApplication,
             bool failAfterReplacement, bool failRollback)
         {
-            ApplyPackageCore(update, installDirectory, restartApplication, failAfterReplacement, failRollback);
+            ApplyPackageCore(update, installDirectory, restartApplication, failAfterReplacement, failRollback,
+                StartRecoveredApplication);
+        }
+
+        // Test-only seam. The injected starter must not launch a real application;
+        // it only observes whether recovery was considered safe.
+        internal static void ApplyPackageForTests(StagedUpdate update, string installDirectory, bool restartApplication,
+            bool failAfterReplacement, bool failRollback, Action<string> recoveredApplicationStarter)
+        {
+            if (recoveredApplicationStarter == null)
+                throw new ArgumentNullException("recoveredApplicationStarter");
+            ApplyPackageCore(update, installDirectory, restartApplication, failAfterReplacement, failRollback,
+                recoveredApplicationStarter);
         }
 
         private static void ApplyPackageCore(StagedUpdate update, string installDirectory, bool restartApplication,
-            bool failAfterReplacement, bool failRollback)
+            bool failAfterReplacement, bool failRollback, Action<string> recoveredApplicationStarter)
         {
             if (update == null)
                 throw new ArgumentNullException("update");
             string target = ValidateInstallDirectory(installDirectory);
-            string package = ValidateStagedUpdate(update);
-            string expectedPackageName = "UPSGuardian-" + update.Version + "-windows-x64.zip";
-            if (!String.Equals(Path.GetFileName(package), expectedPackageName, StringComparison.Ordinal))
-                throw new InvalidDataException("The staged package name does not match its version.");
-
-            string actualHash = ComputeSha256(package);
-            if (!String.Equals(actualHash, update.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("The staged package failed SHA-256 verification.");
-
-            string staging = Path.Combine(target, ".upsguardian-install-" + Guid.NewGuid().ToString("N"));
-            string backup = Path.Combine(target, ".upsguardian-backup-" + Guid.NewGuid().ToString("N"));
+            string staging = null;
+            string backup = null;
             bool preserveBackup = false;
-            Directory.CreateDirectory(staging);
-            Directory.CreateDirectory(backup);
+            bool replacementStarted = false;
+            bool recoveryReady = false;
             try
             {
+                // Establish that the untouched installation is complete before
+                // any update input is opened. This is the only state in which a
+                // pre-replacement failure may safely relaunch the old version.
+                VerifyRecoverableInstallation(target);
+                recoveryReady = true;
+
+                string package = ValidateStagedUpdate(update);
+                string expectedPackageName = "UPSGuardian-" + update.Version + "-windows-x64.zip";
+                if (!String.Equals(Path.GetFileName(package), expectedPackageName, StringComparison.Ordinal))
+                    throw new InvalidDataException("The staged package name does not match its version.");
+
+                string actualHash = ComputeSha256(package);
+                if (!String.Equals(actualHash, update.Sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("The staged package failed SHA-256 verification.");
+
+                staging = Path.Combine(target, ".upsguardian-install-" + Guid.NewGuid().ToString("N"));
+                backup = Path.Combine(target, ".upsguardian-backup-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(staging);
+                Directory.CreateDirectory(backup);
                 RejectReparsePoint(staging, "package staging directory");
                 RejectReparsePoint(backup, "package backup directory");
                 List<PackageFile> files = ValidateAndExtract(package, staging);
                 List<BackupFile> backups = BackupFiles(files, target, backup);
                 try
                 {
+                    replacementStarted = true;
                     ReplaceFiles(files, target);
                     if (failAfterReplacement)
                         throw new IOException("Injected test replacement failure.");
@@ -160,14 +183,28 @@ namespace UpsGuardian
                     // update failure to the helper's log.
                     if (restartApplication)
                     {
-                        try { StartRecoveredApplication(target); }
+                        try { recoveredApplicationStarter(target); }
                         catch (Exception recoveryStartFailure)
                         {
-                            throw new IOException("The update was rolled back, but the recovered UPS Guardian application could not be started.", recoveryStartFailure);
+                            throw RecoveryStartFailure(installFailure, recoveryStartFailure,
+                                "The update was rolled back, but the recovered UPS Guardian application could not be started.");
                         }
                     }
                     throw;
                 }
+            }
+            catch (Exception failure)
+            {
+                if (restartApplication && recoveryReady && !replacementStarted)
+                {
+                    try { recoveredApplicationStarter(target); }
+                    catch (Exception recoveryStartFailure)
+                    {
+                        throw RecoveryStartFailure(failure, recoveryStartFailure,
+                            "The update failed before replacement and the recovered UPS Guardian application could not be started.");
+                    }
+                }
+                throw;
             }
             finally
             {
@@ -175,6 +212,14 @@ namespace UpsGuardian
                 if (!preserveBackup)
                     TryDeleteDirectory(backup);
             }
+        }
+
+        private static Exception RecoveryStartFailure(Exception originalFailure, Exception recoveryStartFailure,
+            string message)
+        {
+            return new IOException(message + " Original error: " + originalFailure.Message +
+                ". Recovery error: " + recoveryStartFailure.Message,
+                new AggregateException(originalFailure, recoveryStartFailure));
         }
 
         internal static List<string> ValidateArchiveForTests(string packagePath, string version, string expectedHash, string installDirectory)
@@ -557,10 +602,16 @@ namespace UpsGuardian
             }
         }
 
+        private static void VerifyRecoverableInstallation(string target)
+        {
+            RequireRegularFile(Path.Combine(target, MainExecutable), "installed application");
+            RequireRegularFile(Path.Combine(target, UpdaterExecutable), "installed updater");
+        }
+
         private static void StartRecoveredApplication(string target)
         {
+            VerifyRecoverableInstallation(target);
             string executable = Path.Combine(target, MainExecutable);
-            RequireRegularFile(executable, "recovered application");
             ProcessStartInfo startInfo = new ProcessStartInfo();
             startInfo.FileName = executable;
             startInfo.Arguments = "--update-failed";

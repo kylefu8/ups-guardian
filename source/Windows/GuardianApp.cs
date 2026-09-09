@@ -60,6 +60,7 @@ namespace UpsGuardian
         volatile bool closing;
         bool resourcesDisposed;
         DateTime nextPoll = DateTime.MinValue;
+        int connectionGeneration;
         string lastError = "", lastTransition = "";
         string ConfigPath { get { return Path.Combine(dataDirectory, "settings.xml"); } }
 
@@ -73,18 +74,19 @@ namespace UpsGuardian
             catch (Exception ex) { lastError = "电源控制初始化失败：" + ex.Message; }
             capabilities = actions == null ? new PowerCapabilities() : actions.DetectCapabilities();
             InitializeLanguage();
-            if (actions == null || !WindowsPowerActions.IsAdministrator()) config.Armed = false;
+            // A remembered UPS can resume monitoring after verification, never protection.
+            config.Armed = false;
             firstRecovery = actions != null && actions.HasRecovery;
             if (firstRecovery) { config.Armed = false; lastError = "检测到上次未恢复的限制，请点击「暂停并恢复」。"; }
             BuildInterface();
             LoadControls(); OnSettingsSaved(); SetupTray(); AttachLocalization();
             timer.Interval = 1000; timer.Tick += Tick;
-            Shown += delegate { timer.Start(); Tick(null, EventArgs.Empty); if (startHidden) Ui(delegate { Hide(); }); };
+            Shown += delegate { timer.Start(); if (startHidden && config.ConnectionConfirmed) Hide(); InitializeConnection(); Tick(null, EventArgs.Empty); };
             FormClosing += delegate(object sender, FormClosingEventArgs e)
             {
                 if (!exiting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); tray.ShowBalloonTip(2500, Localization.T("UPS 守护仍在运行"), Localization.T("双击托盘图标打开；从托盘菜单退出。"), ToolTipIcon.Info); }
             };
-            Notice(lastError.Length > 0 ? lastError : "只读监测已启动。启用保护后才会修改功耗或触发休眠。", false);
+            Notice(lastError.Length > 0 ? lastError : "请先发现并确认一台 UPS，确认前不会开始监测或启用保护。", false);
             if (updateFailed) Notice("更新失败，已恢复之前的版本，请查看更新日志。", true);
         }
         void Number(Control owner, NumericUpDown input, int x, int y, int width, int minimum, int maximum, string name)
@@ -118,6 +120,7 @@ namespace UpsGuardian
             if (closing) return;
             closing = true; timer.Stop();
             if (downloadCancellation != null) downloadCancellation.Cancel();
+            if (discoveryCancellation != null) discoveryCancellation.Cancel();
         }
         protected override void Dispose(bool disposing)
         {
@@ -130,6 +133,7 @@ namespace UpsGuardian
             // alive until BOTH the tray and the Form have finished disposing.
             tray.Visible = false; tray.Icon = null; tray.ContextMenuStrip = null;
             tray.Dispose(); if (menu != null) menu.Dispose();
+            languageMenu.Dispose();
             showRequest.Dispose(); tips.Dispose();
             base.Dispose(true);
             localizedView.Dispose();
@@ -137,6 +141,7 @@ namespace UpsGuardian
             if (brandImage != null) brandImage.Dispose();
             if (brandIcon != null) brandIcon.Dispose();
             if (downloadCancellation != null) downloadCancellation.Dispose();
+            if (discoveryCancellation != null) discoveryCancellation.Dispose();
         }
         void Log(string text)
         { try { File.AppendAllText(Path.Combine(dataDirectory, "events.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + text + Environment.NewLine); if (currentPage == 3) RefreshEvents(); } catch { } }
@@ -151,10 +156,10 @@ namespace UpsGuardian
         }
         bool SaveControls(bool reconnect)
         {
-            if (config.Armed || busy) return false;
+            if (config.Armed || busy || discoveryBusy) return false;
             try
             {
-                var updated = new GuardSettings();
+                var updated = config.Copy();
                 updated.Host = host.Text.Trim(); updated.Port = (int)port.Value; updated.UpsName = upsName.Text.Trim();
                 updated.UsePercent = unit.SelectedIndex == 1; updated.LoadThreshold = (double)threshold.Value; updated.RecoveryMargin = (double)margin.Value;
                 updated.CpuMaximum = (int)cpu.Value; updated.GpuWatts = (int)gpu.Value; updated.ChargeThreshold = (double)charge.Value;
@@ -166,16 +171,25 @@ namespace UpsGuardian
                     throw new InvalidDataException(Localization.F("GPU 功率范围为 {0}–{1}W；0 表示不控制 GPU。", capabilities.GpuMinimumWatts, capabilities.GpuMaximumWatts));
                 if (updated.StartAtLogon != config.StartAtLogon) StartupTask.Set(updated.StartAtLogon);
                 bool endpointChanged = config.Host != updated.Host || config.Port != updated.Port || config.UpsName != updated.UpsName;
-                updated.Save(ConfigPath); config = updated; logic.Reset(); ratingNoticeShown = false; OnSettingsSaved();
+                if (endpointChanged) updated.ConnectionConfirmed = false;
+                updated.Save(ConfigPath); config = updated; logic.Reset(); ratingNoticeShown = false;
                 if (endpointChanged) { chart.Reset(); plottedAt = DateTime.MinValue; }
-                if (reconnect) { sample = null; nextPoll = DateTime.MinValue; }
+                if (endpointChanged || reconnect)
+                {
+                    // Invalidate both the displayed sample and any read already in flight,
+                    // including an A -> B -> A switch or reconnect to the same endpoint.
+                    connectionGeneration++; sample = null; lastError = ""; nextPoll = DateTime.MinValue;
+                    connectionReady = false;
+                }
+                OnSettingsSaved();
                 Notice("设置已保存；自动保护尚未启用。", false); return true;
             }
             catch (Exception ex) { LocalizedMessage(ex.Message, "设置未保存"); return false; }
         }
         void Arm()
         {
-            if (busy || updateBusy || actions == null || config.Armed) return;
+            if (!connectionReady || !config.ConnectionConfirmed) { Navigate(2); return; }
+            if (busy || discoveryBusy || updateBusy || actions == null || config.Armed) return;
             if (!WindowsPowerActions.IsAdministrator()) { LocalizedMessage("请先点击「以管理员身份打开」，以便设置本机功耗限制。", "需要管理员权限"); return; }
             if (actions.HasRecovery) { LocalizedMessage("请先暂停并恢复上次限制。", "有待恢复设置"); return; }
             if (!capabilities.SuspendSupported || !capabilities.CpuLimitSupported) { LocalizedMessage("当前电脑未提供所需的电源控制能力，可继续只读监测。", "无法启用保护"); return; }
@@ -227,7 +241,7 @@ namespace UpsGuardian
         }
         void RelaunchElevated()
         {
-            if (config.Armed || busy) return;
+            if (config.Armed || busy || discoveryBusy) return;
             if (!SaveControls(false)) return;
             try
             {
@@ -239,20 +253,22 @@ namespace UpsGuardian
         }
         void Poll()
         {
-            if (fetching || string.IsNullOrWhiteSpace(config.Host)) return; fetching = true;
+            if (!connectionReady || !config.ConnectionConfirmed || fetching || string.IsNullOrWhiteSpace(config.Host)) return; fetching = true;
             string targetHost = config.Host, name = config.UpsName; int targetPort = config.Port;
+            int generation = connectionGeneration;
             Task.Run(delegate
             {
                 NutSnapshot received = null; Exception error = null;
                 try { received = NutClient.Read(targetHost, targetPort, name, 2500); } catch (Exception ex) { error = ex; }
-                Ui(delegate
-                {
-                    fetching = false;
-                    if (config.Host != targetHost || config.Port != targetPort || config.UpsName != name) return;
-                    if (error != null) { if (lastError != error.Message) Notice("UPS 读取失败：" + error.Message, true); lastError = error.Message; }
-                    else { sample = received; lastError = ""; }
-                });
+                Ui(delegate { CompletePoll(generation, received, error); });
             });
+        }
+        void CompletePoll(int generation, NutSnapshot received, Exception error)
+        {
+            fetching = false;
+            if (generation != connectionGeneration || !connectionReady || !config.ConnectionConfirmed) return;
+            if (error != null) { if (lastError != error.Message) Notice("UPS 读取失败：" + error.Message, true); lastError = error.Message; }
+            else { sample = received; lastError = ""; }
         }
         void Tick(object sender, EventArgs e)
         {
@@ -260,10 +276,11 @@ namespace UpsGuardian
             if (showRequest.WaitOne(0)) ShowWindow();
             DateTime now = DateTime.UtcNow;
             if (now >= nextPoll && !fetching) { nextPoll = now.AddSeconds(2); Poll(); }
-            GuardDecision decision = logic.Evaluate(sample, config, now, config.Armed);
+            GuardDecision decision = logic.Evaluate(sample, config, now, config.Armed && connectionReady && config.ConnectionConfirmed);
+            if (!connectionReady) decision.Message = discoveryBusy ? "正在发现或验证 UPS · 监测尚未开始" : "等待确认 UPS · 监测尚未开始";
             state.Text = "● " + Localization.T(decision.Message) + (throttleFault ? " · " + Localization.T("功耗控制待处理") : (reduced ? " · " + Localization.T("本机已限功耗") : ""));
             state.ForeColor = decision.HibernateInSeconds.HasValue ? red : (config.Armed ? blue : muted);
-            string trayText = Localization.T("UPS 守护") + " · " + Localization.T(config.Armed ? "保护已启用" : "只读监测");
+            string trayText = Localization.T("UPS 守护") + " · " + Localization.T(!connectionReady ? "等待确认 UPS" : (config.Armed ? "保护已启用" : "只读监测"));
             if (sample != null)
             {
                 double? watts = sample.MeasuredWatts ?? sample.EstimatedWatts;
@@ -283,12 +300,14 @@ namespace UpsGuardian
                     Notice("当前触发阈值高于 UPS 额定输出；请确认或调整阈值后再启用保护。", false);
                 }
             }
-            else detail.Text = string.IsNullOrWhiteSpace(config.Host) ? Localization.T("请先设置 UPS 服务器。") : Localization.F("正在连接 {0}:{1} / {2}", config.Host, config.Port, config.UpsName);
+            else detail.Text = Localization.T(discoveryBusy ? "正在发现或验证 UPS · 监测尚未开始" : "等待确认 UPS · 监测尚未开始");
             if (trayText.Length > 63) trayText = trayText.Substring(0, 63); tray.Text = trayText;
-            connection.Enabled = rules.Enabled = !config.Armed && !busy;
-            arm.Enabled = !config.Armed && !busy && !updateBusy && actions != null && !firstRecovery;
+            connection.Enabled = !config.Armed && !busy;
+            rules.Enabled = connectionReady && !config.Armed && !busy && !discoveryBusy;
+            arm.Enabled = !config.Armed && !busy && !discoveryBusy && !updateBusy && actions != null && !firstRecovery;
             pause.Enabled = config.Armed || busy || (actions != null && actions.HasRecovery);
             UpdatePresentation(decision);
+            UpdateDiscoveryControls();
             if (decision.Message != lastTransition)
             {
                 if (decision.HibernateInSeconds.HasValue && lastTransition.IndexOf("秒后休眠", StringComparison.Ordinal) < 0)
@@ -296,7 +315,7 @@ namespace UpsGuardian
                 if (!decision.HibernateInSeconds.HasValue) Log(decision.Message);
                 lastTransition = decision.Message;
             }
-            if (!config.Armed || busy || actions == null) return;
+            if (!config.Armed || !connectionReady || !config.ConnectionConfirmed || busy || actions == null) return;
             if (decision.HibernateNow)
             {
                 // Persist the disarmed state before sleeping, preventing a resume/hibernate loop.

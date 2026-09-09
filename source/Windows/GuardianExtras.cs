@@ -12,17 +12,18 @@ namespace UpsGuardian
 {
     sealed partial class GuardianForm
     {
-        readonly ComboBox languageSelector = new ComboBox();
+        readonly LanguageButton languageButton = new LanguageButton();
+        readonly ContextMenuStrip languageMenu = new ContextMenuStrip();
+        readonly LinkLabel sidebarVersion = new LinkLabel();
         readonly Label updateStatus = new Label(), versionValue = new Label();
         readonly ModernButton checkUpdate = new ModernButton(), installUpdate = new ModernButton();
         readonly RichTextBox updateNotes = new RichTextBox();
         readonly LocalizedView localizedView = new LocalizedView();
-        readonly Panel[] guidePages = new Panel[3];
-        readonly Button[] guideTabs = new Button[3];
+        readonly FlowLayoutPanel guideReading = new FlowLayoutPanel();
         readonly List<Image> donationImages = new List<Image>();
         UiPreferences uiPreferences;
         UpdateRelease availableRelease;
-        bool languageChanging, updateBusy;
+        bool updateBusy;
         CancellationTokenSource downloadCancellation;
         string UiPreferencesPath { get { return Path.Combine(dataDirectory, "ui.xml"); } }
 
@@ -30,7 +31,6 @@ namespace UpsGuardian
         {
             public string Code, Name;
             public LanguageOption(string code, string name) { Code = code; Name = name; }
-            public override string ToString() { return Name; }
         }
 
         void InitializeLanguage()
@@ -40,18 +40,35 @@ namespace UpsGuardian
         }
         void BuildExtraPages(Panel sidebar)
         {
-            languageSelector.SetBounds(20, 500, 208, 30); languageSelector.DropDownStyle = ComboBoxStyle.DropDownList;
-            languageSelector.Font = new Font("Microsoft YaHei UI", 9F); languageSelector.AccessibleName = "语言";
-            languageSelector.Items.AddRange(new object[] {
-                new LanguageOption("auto", "System / 自动"), new LanguageOption("zh-CN", "简体中文"),
+            StyleButton(languageButton, "", 20, 500, 116, 34, Color.FromArgb(26, 43, 62), Color.FromArgb(213, 224, 238));
+            languageButton.Font = new Font("Microsoft YaHei UI", 9F); languageButton.AccessibleName = "语言";
+            sidebar.Controls.Add(languageButton);
+            languageMenu.Font = Font; languageMenu.ShowImageMargin = false; languageMenu.ShowCheckMargin = true;
+            languageMenu.ForeColor = Color.FromArgb(213, 224, 238);
+            languageMenu.Renderer = new ToolStripProfessionalRenderer(new LanguageMenuColors()) { RoundedEdges = false };
+            var options = new[] {
+                new LanguageOption("auto", "跟随系统"), new LanguageOption("zh-CN", "简体中文"),
                 new LanguageOption("en", "English"), new LanguageOption("ja", "日本語"), new LanguageOption("ko", "한국어"),
-                new LanguageOption("fr", "Français"), new LanguageOption("de", "Deutsch"), new LanguageOption("es", "Español") });
-            sidebar.Controls.Add(languageSelector);
-            languageChanging = true; languageSelector.SelectedIndex = 0;
-            for (int i = 0; i < languageSelector.Items.Count; i++) if (((LanguageOption)languageSelector.Items[i]).Code == uiPreferences.Language) languageSelector.SelectedIndex = i;
-            languageChanging = false;
-            languageSelector.SelectedIndexChanged += delegate { ChangeLanguage(); };
-            tips.SetToolTip(languageSelector, Localization.T("选择语言后立即生效。"));
+                new LanguageOption("fr", "Français"), new LanguageOption("de", "Deutsch"), new LanguageOption("es", "Español") };
+            foreach (LanguageOption option in options)
+            {
+                string code = option.Code;
+                var item = new ToolStripMenuItem(option.Name) { Tag = option, Padding = new Padding(8, 5, 16, 5) };
+                item.Click += delegate { ChangeLanguage(code); languageMenu.Close(); };
+                languageMenu.Items.Add(item);
+                if (code == "auto") languageMenu.Items.Add(new ToolStripSeparator());
+            }
+            languageButton.Click += delegate {
+                UpdateLanguageMenu();
+                languageMenu.Show(languageButton, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
+            };
+            sidebarVersion.SetBounds(142, 500, 90, 34); sidebarVersion.Text = "v" + BuildInfo.Version;
+            sidebarVersion.Font = new Font("Segoe UI", 8.5F); sidebarVersion.TextAlign = ContentAlignment.MiddleRight;
+            sidebarVersion.LinkBehavior = LinkBehavior.HoverUnderline; sidebarVersion.LinkColor = Color.FromArgb(143, 162, 184);
+            sidebarVersion.ActiveLinkColor = Color.FromArgb(124, 228, 211); sidebarVersion.AccessibleName = "版本更新";
+            sidebarVersion.LinkClicked += delegate { Navigate(5); };
+            sidebar.Controls.Add(sidebarVersion);
+            UpdateLanguageMenu();
             BuildGuidePage(); BuildUpdatePage(); BuildSupportPage();
         }
         void AttachLocalization()
@@ -60,45 +77,60 @@ namespace UpsGuardian
             bool oldLoading = loading; loading = true;
             try { unit.Items[0] = Localization.T("估算功率（W）"); unit.Items[1] = Localization.T("负载率（%）"); }
             finally { loading = oldLoading; }
+            UpdateLanguageMenu();
         }
-        void ChangeLanguage()
+        void UpdateLanguageMenu()
         {
-            if (languageChanging || languageSelector.SelectedItem == null) return;
-            var selected = (LanguageOption)languageSelector.SelectedItem;
+            string current = Localization.Language;
+            string preference = uiPreferences.Language;
+            bool automatic = String.IsNullOrWhiteSpace(preference) || preference == "auto" || preference == "system";
+            foreach (ToolStripItem entry in languageMenu.Items)
+            {
+                var item = entry as ToolStripMenuItem;
+                if (item == null) continue;
+                var option = (LanguageOption)item.Tag;
+                item.Text = option.Code == "auto" ? Localization.T("跟随系统") : option.Name;
+                item.Checked = automatic ? option.Code == "auto" : option.Code == Localization.ResolveLanguage(preference);
+                if (option.Code == current) languageButton.Text = option.Name;
+            }
+            tips.SetToolTip(languageButton, (automatic ? Localization.T("跟随系统") + " · " : "") + languageButton.Text + "\n" + Localization.T("选择语言后立即生效。"));
+            tips.SetToolTip(sidebarVersion, Localization.T("版本更新"));
+        }
+        void ChangeLanguage(string code)
+        {
+            if (uiPreferences.Language == code) return;
             string previous = uiPreferences.Language;
             try
             {
-                uiPreferences.Language = selected.Code; uiPreferences.Save(UiPreferencesPath);
-                Localization.SetLanguage(Localization.ResolveLanguage(selected.Code));
+                uiPreferences.Language = code; uiPreferences.Save(UiPreferencesPath);
+                Localization.SetLanguage(Localization.ResolveLanguage(code));
                 localizedView.ApplyAll();
                 bool oldLoading = loading; loading = true;
                 try { unit.Items[0] = Localization.T("估算功率（W）"); unit.Items[1] = Localization.T("负载率（%）"); }
                 finally { loading = oldLoading; }
                 UpdateRuleDescriptions(); if (currentPage == 3) RefreshEvents();
-                tips.SetToolTip(languageSelector, Localization.T("选择语言后立即生效。"));
+                UpdateLanguageMenu();
             }
-            catch (Exception ex) { uiPreferences.Language = previous; Notice("语言设置保存失败：" + ex.Message, true); }
+            catch (Exception ex) { uiPreferences.Language = previous; UpdateLanguageMenu(); Notice("语言设置保存失败：" + ex.Message, true); }
         }
         DialogResult LocalizedMessage(string message, string caption, MessageBoxButtons buttons = MessageBoxButtons.OK, MessageBoxIcon icon = MessageBoxIcon.None)
         { return MessageBox.Show(this, Localization.T(message), Localization.T(caption), buttons, icon); }
 
+        Panel BuildExtraPageBody(int index, string title, string subtitle)
+        {
+            Panel page = pages[index]; page.AutoScroll = false;
+            PageHeading(page, title, subtitle);
+            var body = new Panel { Bounds = new Rectangle(0, 105, 892, 581), BackColor = canvas };
+            page.Controls.Add(body);
+            return body;
+        }
         void BuildGuidePage()
         {
-            Panel page = pages[4]; page.AutoScroll = false;
-            PageHeading(page, "使用说明", "连接、保护与日常操作");
-            string[] names = { "操作指南", "版本更新", "支持开发" };
-            for (int i = 0; i < names.Length; i++)
-            {
-                int index = i;
-                guideTabs[i] = MakeButton(page, names[i], 30 + i * 286, 109, 260, 38, Color.White, ink);
-                guideTabs[i].AccessibleName = names[i];
-                guideTabs[i].Click += delegate { NavigateGuide(index); };
-                guidePages[i] = new Panel { Bounds = new Rectangle(0, 159, 892, 527), BackColor = canvas, Visible = i == 0 };
-                page.Controls.Add(guidePages[i]);
-            }
-            var reading = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true,
-                FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(30, 0, 0, 16) };
-            guidePages[0].Controls.Add(reading);
+            Panel page = BuildExtraPageBody(4, "使用说明", "连接、保护与日常操作");
+            var reading = guideReading;
+            reading.Dock = DockStyle.Fill; reading.AutoScroll = true;
+            reading.FlowDirection = FlowDirection.TopDown; reading.WrapContents = false; reading.Padding = new Padding(30, 0, 0, 16);
+            page.Controls.Add(reading);
             foreach (string[] section in GuideContent.Sections)
             {
                 var card = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -113,21 +145,10 @@ namespace UpsGuardian
                     Margin = Padding.Empty, UseMnemonic = false };
                 card.Controls.Add(title); card.Controls.Add(body); reading.Controls.Add(card);
             }
-            NavigateGuide(0);
-        }
-        void NavigateGuide(int index)
-        {
-            for (int i = 0; i < guidePages.Length; i++)
-            {
-                guidePages[i].Visible = i == index;
-                guideTabs[i].BackColor = i == index ? teal : Color.White;
-                guideTabs[i].ForeColor = i == index ? Color.White : ink;
-                guideTabs[i].Invalidate();
-            }
         }
         void BuildUpdatePage()
         {
-            Panel page = guidePages[1];
+            Panel page = BuildExtraPageBody(5, "版本更新", "Windows 版本");
             var release = Surface(page, 30, 0, 832, 138);
             versionValue.SetBounds(24, 18, 482, 46); versionValue.Font = new Font("Segoe UI", 24, FontStyle.Bold); versionValue.Text = BuildInfo.Version; versionValue.ForeColor = ink; release.Controls.Add(versionValue);
             ViewLabel(release, "Windows 版本", 25, 76, 480, 28, 10, false, muted);
@@ -146,12 +167,11 @@ namespace UpsGuardian
         }
         void BuildSupportPage()
         {
-            Panel page = guidePages[2];
-            ViewLabel(page, "打赏完全自愿，不影响任何功能。", 33, 2, 799, 32, 10, false, muted);
+            Panel page = BuildExtraPageBody(6, "支持开发", "打赏完全自愿，不影响任何功能。");
             string[] methods = { "微信", "支付宝" }; string[] resources = { "Guardian.Donation.wechat", "Guardian.Donation.alipay" };
             for (int i = 0; i < methods.Length; i++)
             {
-                var card = Surface(page, 30 + i * 424, 42, 408, 400);
+                var card = Surface(page, 30 + i * 424, 0, 408, 400);
                 ViewLabel(card, methods[i], 23, 20, 361, 31, 15, true, ink);
                 Image code = LoadDonationImage(resources[i]);
                 if (code != null)
@@ -201,7 +221,7 @@ namespace UpsGuardian
         }
         void DownloadAndInstall()
         {
-            if (updateBusy || availableRelease == null) return;
+            if (updateBusy || discoveryBusy || availableRelease == null) return;
             if (config.Armed || busy || (actions != null && actions.HasRecovery))
             { LocalizedMessage("自动保护运行时，请先暂停并恢复限制，再安装更新。", "版本更新"); return; }
             if (LocalizedMessage("安装更新需要退出程序，继续？", "版本更新", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
