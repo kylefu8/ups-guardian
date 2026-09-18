@@ -34,13 +34,20 @@ macOS is planned for a later phase. This release does not include a macOS applic
 
 ## Quick start
 
-1. Download the Windows ZIP from Releases, extract it to a writable folder and run `UPSGuardian.exe`. Keep `UPSGuardian.Updater.exe` beside it.
+1. Download either the Windows installer or the portable ZIP from Releases. The installer is the per-user setup option; for the ZIP, extract it to a writable folder, run `UPSGuardian.exe` and keep `UPSGuardian.Updater.exe` beside it.
 2. In **Connection**, search the LAN, select one UPS and explicitly confirm the selection. Monitoring and protection remain unavailable until a readable target is confirmed. The scan port defaults to 3493 and can be changed; allow this PC in the NUT server's client list if access is denied.
 3. In **Protection**, confirm the load measurement and thresholds. New profiles default to load percentage, not an assumed watt rating.
 4. Review the detected power capabilities and perform controlled limit/restoration testing. Reopen with administrator privileges and explicitly enable protection when ready.
 5. Closing the window hides it to the tray. Use **Pause and restore** to stop automatic actions, or **Exit** to restore owned limits and quit.
 
 Confirmation starts read-only monitoring. The selected target is remembered and revalidated on startup; failure returns to discovery without switching to another UPS. Protection always requires manual activation after startup. Existing endpoints and protection parameters are preserved, but legacy profiles need an initial discovery confirmation. No personal UPS address, settings or logs are included in release archives.
+
+## Installation choices
+
+- **Installer:** Run `UPSGuardian-{version}-windows-x64-setup.exe` for a per-user installation. The default location is `%LOCALAPPDATA%\Programs\UPS Guardian`; setup can add a Start Menu entry and an optional desktop shortcut. The application's `data/` folder remains alongside the installation files.
+- **Portable ZIP:** Extract `UPSGuardian-{version}-windows-x64.zip` to any writable folder and run the application there. Keep the two EXEs together. This is useful when you want to choose the folder yourself or avoid an installed shortcut.
+- **Upgrade:** The built-in updater downloads and installs the ZIP package. Re-running the installer into the same directory preserves `data/`. Installing into a different directory does not migrate the old `data/` automatically.
+- **Uninstall:** Pause protection, restore any limits owned by the application and exit from the system tray before uninstalling. If login-at-startup is enabled, turn it off in the application and save first. When `recovery.xml` is present, installation and uninstall are blocked until recovery completes, preventing owned power limits from being left behind. The uninstaller leaves `data/` in place so settings, events and recovery information can be backed up or deliberately removed later.
 
 After confirmation, Connection shows a compact device card. **Change UPS** reveals discovery without changing the target or starting a scan. Protection highlights the load, charge and runtime thresholds, with CPU/GPU limits, recovery margin, units and countdown under **Advanced settings**. Collapsing controls preserves their values, and the action summary remains visible. The overview load chart can be expanded on demand; hiding it does not clear recent samples.
 
@@ -59,11 +66,11 @@ UPS load includes every device attached to the UPS. When actual watts are unavai
 
 ## Updates and local data
 
-Open **Updates** in the sidebar to check GitHub and choose **Download and install**. Installation requires automatic protection to be paused and any owned limits restored. The helper waits for the main application to exit, verifies the package again, replaces only allowed release files, rolls back on failure and restarts the application. It does not replace `data/`. The separate **Support** sidebar page contains the optional donation codes.
+Open **Updates** in the sidebar to check GitHub and choose **Download and install**. The built-in updater uses the ZIP package even when the application was installed with the setup program. For an in-app update, pause automatic protection and let the application restore any limits it owns; the helper waits for the main application to exit and restarts it after installation. When running the installer or uninstaller directly, restore owned limits and exit from the system tray first. The helper verifies the package again, replaces only allowed release files, rolls back on failure and does not replace `data/`. The separate **Support** sidebar page contains the optional donation codes.
 
 The current version and release channel are defined in `version.json`. Beta versions can discover compatible prereleases; stable versions ignore prereleases. Downloads use HTTPS and a published SHA-256 checksum. The beta does not yet provide code signing or notarization.
 
-`data/` contains this installation's settings, language preference, events and any outstanding power-recovery record. Keep an outstanding `recovery.xml` until the application has restored its owned settings. Do not include `data/` in a release or source contribution.
+`data/` contains this installation's settings, language preference, events and any outstanding power-recovery record. Keep an outstanding `recovery.xml` until the application has restored its owned settings. Same-directory installer upgrades and ZIP updates keep this folder; a different installation directory does not import it automatically. An installer or uninstaller blocks while recovery is pending, and uninstalling leaves `data/` in place. Do not include `data/` in a release or source contribution.
 
 ## Build and test
 
@@ -75,7 +82,7 @@ On Windows with PowerShell and the .NET Framework compiler:
 .\package.ps1
 ```
 
-Build output goes to `artifacts/windows-x64`; ZIP and checksums go to `artifacts/release`. Tests use simulated UPS servers, fake power backends and sandbox directories. They do not intentionally change system power limits or invoke sleep.
+Build output goes to `artifacts/windows-x64`; the default package output in `artifacts/release` includes the portable ZIP, the Windows setup executable, `SHA256SUMS.txt` and `RELEASE_NOTES.md`. Without an override, `package.ps1` downloads the pinned Inno Setup 6.7.3 compiler, verifies its SHA-256 and extracts it in portable mode under `artifacts/tools`; it does not search for or modify a global Inno Setup installation. Pass `-InnoCompiler` with an explicit `ISCC.exe` path only when using a separately prepared compiler. `test-installer.ps1` exercises installation and uninstall behavior in an isolated sandbox. Tests use simulated UPS servers, fake power backends and sandbox directories. They do not intentionally change system power limits or invoke sleep.
 
 The portable core can also be compiled with a current .NET SDK:
 

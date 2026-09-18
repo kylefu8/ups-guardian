@@ -29,14 +29,15 @@ jobs:
           ./build.ps1
           ./test.ps1
           ./package.ps1
+          ./test-installer.ps1
       - name: Publish versioned assets
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = (Get-Content version.json -Raw | ConvertFrom-Json).version
-          $arguments = @('release','create',$env:GITHUB_REF_NAME,'--title',"UPS Guardian $version",'--notes-file','CHANGELOG.md','--verify-tag')
+          $arguments = @('release','create',$env:GITHUB_REF_NAME,'--title',"UPS Guardian $version",'--notes-file','artifacts/release/RELEASE_NOTES.md','--verify-tag')
           if ($version.Contains('-')) { $arguments += '--prerelease' }
-          $arguments += @(Get-ChildItem artifacts/release -File | ForEach-Object FullName)
+          $arguments += @("artifacts/release/UPSGuardian-$version-windows-x64.zip", "artifacts/release/UPSGuardian-$version-windows-x64-setup.exe", 'artifacts/release/SHA256SUMS.txt', 'artifacts/release/RELEASE_NOTES.md')
           gh @arguments
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }

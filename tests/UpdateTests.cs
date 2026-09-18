@@ -14,6 +14,8 @@ internal static class UpdateTests
     {
         Run("semver-beta-ordering", SemVerBetaOrdering);
         Run("manifest-asset-selection", ManifestAssetSelection);
+        Run("installer-assets-keep-zip-update-compatible", InstallerAssetsKeepZipUpdateCompatible);
+        Run("installed-update-preserves-uninstaller-and-data", InstalledUpdatePreservesUninstallerAndData);
         Run("stable-channel-excludes-prerelease", StableChannelExcludesPrerelease);
         Run("checksum-rejects-wrong-hash", ChecksumRejectsWrongHash);
         Run("preflight-failures-restart-original", PreflightFailuresRestartOriginal);
@@ -59,6 +61,39 @@ internal static class UpdateTests
         Assert(result.Status == UpdateStatus.NoReleases && result.Release == null, "stable channel does not treat a prerelease as current");
         UpdateCheckResult empty = UpdateService.ParseManifestForTests("[]", "0.1.0");
         Assert(empty.Status == UpdateStatus.NoReleases, "empty release feed is not reported up-to-date");
+    }
+
+    private static void InstallerAssetsKeepZipUpdateCompatible()
+    {
+        const string version = "0.2.0-beta.1";
+        string zip = "UPSGuardian-" + version + "-windows-x64.zip";
+        string setup = "UPSGuardian-" + version + "-windows-x64-setup.exe";
+        string release = Release("v" + version, false, true, zip, "SHA256SUMS.txt");
+        string setupAsset = "{\"name\":\"" + setup + "\",\"browser_download_url\":\"https://github.com/kylefu8/ups-guardian/releases/download/v" + version + "/" + setup + "\"},";
+        release = release.Replace("\"assets\":[", "\"assets\":[" + setupAsset);
+        UpdateCheckResult result = UpdateService.ParseManifestForTests(Manifest(release), "0.1.0-beta.4");
+        Assert(result.Status == UpdateStatus.Available && result.Release.PackageUrl.EndsWith(zip, StringComparison.Ordinal), "setup asset never replaces the ZIP updater payload");
+        string manifest = new String('a', 64) + "  " + setup + "\n" + new String('b', 64) + "  " + zip + "\n";
+        Assert(UpdateService.ParseChecksumForTests(manifest, zip) == new String('b', 64), "multi-asset checksum selects the exact ZIP entry");
+        AssertThrows(delegate { UpdateService.ParseChecksumForTests(manifest + new String('c', 64) + "  " + zip + "\n", zip); }, "duplicate ZIP checksum must remain rejected");
+    }
+
+    private static void InstalledUpdatePreservesUninstallerAndData()
+    {
+        string directory = NewDirectory();
+        try
+        {
+            string package = CreatePackage(directory, "0.2.0", "new-main", "new-updater");
+            string target = PrepareInstalledRuntime(directory);
+            string data = Path.Combine(target, "data");
+            Directory.CreateDirectory(data);
+            string[] retained = { "unins000.exe", "unins000.dat", "data/settings.xml", "data/ui.xml", "data/events.log" };
+            foreach (string name in retained) File.WriteAllText(Path.Combine(target, name), "preserve:" + name);
+            WindowsUpdateInstaller.ApplyPackageForTests(new StagedUpdate(package, Hash(package), "0.2.0"), target, false, false, false);
+            Assert(File.ReadAllText(Path.Combine(target, "UPSGuardian.exe")) == "new-main", "installed application updates in place");
+            foreach (string name in retained) Assert(File.ReadAllText(Path.Combine(target, name)) == "preserve:" + name, "ZIP update preserves " + name);
+        }
+        finally { DeleteDirectory(directory); }
     }
 
     private static void ChecksumRejectsWrongHash()

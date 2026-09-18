@@ -16,6 +16,11 @@ jobs:
       - name: Simulated tests
         shell: pwsh
         run: ./test.ps1
+      - name: Package and verify installer
+        shell: pwsh
+        run: |
+          ./package.ps1
+          ./test-installer.ps1
   portable-core:
     runs-on: ubuntu-latest
     steps:
