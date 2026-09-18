@@ -42,6 +42,8 @@ macOS is planned for a later phase. This release does not include a macOS applic
 
 Confirmation starts read-only monitoring. The selected target is remembered and revalidated on startup; failure returns to discovery without switching to another UPS. Protection always requires manual activation after startup. Existing endpoints and protection parameters are preserved, but legacy profiles need an initial discovery confirmation. No personal UPS address, settings or logs are included in release archives.
 
+After confirmation, Connection shows a compact device card. **Change UPS** reveals discovery without changing the target or starting a scan. Protection highlights the load, charge and runtime thresholds, with CPU/GPU limits, recovery margin, units and countdown under **Advanced settings**. Collapsing controls preserves their values, and the action summary remains visible. The overview load chart can be expanded on demand; hiding it does not clear recent samples.
+
 Discovery prioritizes active Ethernet/Wi-Fi IPv4 interfaces with gateways, falling back to other active Ethernet/Wi-Fi interfaces only when none has a gateway. Larger networks are restricted to the local `/24`; scans are capped at 1024 addresses, 16 concurrent probes and a 30-second overall deadline, and can be canceled. The UI shows the scope. IPv6 and discovery across routed subnets are not supported yet.
 
 ## Protection behavior

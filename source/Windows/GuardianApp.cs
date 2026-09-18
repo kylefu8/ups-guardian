@@ -146,7 +146,7 @@ namespace UpsGuardian
         void Log(string text)
         { try { File.AppendAllText(Path.Combine(dataDirectory, "events.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + text + Environment.NewLine); if (currentPage == 3) RefreshEvents(); } catch { } }
         void Notice(string text, bool balloon)
-        { notice.Text = text; Log(text); if (balloon) tray.ShowBalloonTip(5000, Localization.T("UPS 守护"), Localization.T(text), ToolTipIcon.Warning); }
+        { notice.Text = text; importantNotice = balloon || lastError.Length > 0; LayoutOverview(); Log(text); if (balloon) tray.ShowBalloonTip(5000, Localization.T("UPS 守护"), Localization.T(text), ToolTipIcon.Warning); }
         void LoadControls()
         {
             loading = true; host.Text = config.Host; port.Value = config.Port; upsName.Text = config.UpsName;
@@ -288,10 +288,8 @@ namespace UpsGuardian
                 cards[1].Text = sample.ChargePercent.HasValue ? sample.ChargePercent.Value.ToString("F0") + " %" : "—";
                 cards[2].Text = sample.RuntimeSeconds.HasValue ? Localization.F("{0}分{1}秒", (int)sample.RuntimeSeconds.Value / 60, (int)sample.RuntimeSeconds.Value % 60) : "—";
                 cards[3].Text = sample.OnBattery ? "电池供电" : (sample.OnLine ? "市电供电" : sample.Status);
-                detail.Text = Localization.F("{0} · 负载 {1} · 额定 {2} · 更新 {3}", Localization.T(sample.MeasuredWatts.HasValue ? "实测功率" : "估算功率"),
-                    sample.LoadPercent.HasValue ? sample.LoadPercent.Value.ToString("F0") + "%" : Localization.T("未知"),
-                    sample.NominalWatts.HasValue ? sample.NominalWatts.Value.ToString("F0") + "W" : Localization.T("未知"),
-                    sample.ReceivedUtc.ToLocalTime().ToString("HH:mm:ss")) + (decision.Fresh ? "" : " · " + Localization.T("数据已失效"));
+                detail.Text = Localization.F("最近更新：{0}", sample.ReceivedUtc.ToLocalTime().ToString("HH:mm:ss")) +
+                    (decision.Fresh ? "" : " · " + Localization.T("数据已失效"));
                 trayText += " · " + cards[0].Text;
                 if (!ratingNoticeShown && !config.Armed && !config.AboveRatingAccepted &&
                     (config.UsePercent || sample.NominalWatts.HasValue) && config.LoadThreshold > (config.UsePercent ? 100 : sample.NominalWatts.Value))

@@ -287,5 +287,22 @@
   "等待确认 UPS": "Warten auf USV-Bestätigung",
   "正在发现或验证 UPS · 监测尚未开始": "USV wird gesucht oder geprüft · Überwachung hat noch nicht begonnen",
   "保存启动设置": "Starteinstellungen speichern",
-  "扫描端口": "Scan-Port"
+  "扫描端口": "Scan-Port",
+  "负载阈值": "Lastschwelle",
+  "启用后的动作": "Aktionen bei Aktivierung",
+  "高级设置": "Erweiterte Einstellungen",
+  "收起高级设置": "Erweiterte Einstellungen ausblenden",
+  "显示负载曲线": "Lastverlauf anzeigen",
+  "收起负载曲线": "Lastverlauf ausblenden",
+  "仅电池供电时生效": "Nur im Akkubetrieb",
+  "持续 {0} 秒后降低本机功耗。": "Lokale Leistung nach {0} s über der Schwelle begrenzen.",
+  "低于 {0}{1} 持续 {2} 秒后恢复原设置。": "Unter {0}{1} für {2} s: ursprüngliche Werte wiederherstellen.",
+  "电池条件持续 {0} 秒，倒计时 {1} 秒后休眠；来电、条件解除或数据失效时取消。": "Akkubedingung {0} s bestätigen, dann nach {1} s Ruhezustand; bei Netzrückkehr, Entwarnung oder veralteten Daten abbrechen.",
+  "不控制 GPU": "GPU unverändert",
+  "GPU 上限 {0}W": "GPU-Limit {0} W",
+  "降功耗：CPU 最大状态上限 {0}%；{1}。": "Leistungsbegrenzung: CPU-Maximalzustand bis {0} %; {1}.",
+  "电池不足时按策略休眠。": "Bei schwachem Akku gemäß Richtlinie in den Ruhezustand wechseln.",
+  "最近更新：{0}": "Zuletzt aktualisiert: {0}",
+  "已确认的 UPS": "Bestätigte USV",
+  "更换 UPS": "USV wechseln"
 }

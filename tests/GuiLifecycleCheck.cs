@@ -92,6 +92,86 @@ internal static class GuiLifecycleCheck
         timer.Start();
     }
 
+    static void CheckSimplifiedViews(Form form)
+    {
+        var type = form.GetType();
+        Func<string, object> field = delegate(string name) { return type.GetField(name, Private).GetValue(form); };
+        var timer = (Timer)field("timer"); bool ticking = timer.Enabled; timer.Stop();
+        object originalSettings = field("config"), originalCapabilities = field("capabilities");
+        var rules = (Panel)field("rules"); bool enabled = rules.Enabled;
+        try
+        {
+            object settings = originalSettings.GetType().GetMethod("Copy").Invoke(originalSettings, null);
+            Action<string, object> set = delegate(string name, object value) { settings.GetType().GetField(name).SetValue(settings, value); };
+            set("UsePercent", false); set("LoadThreshold", 750D); set("RecoveryMargin", 50D);
+            set("CpuMaximum", 37); set("GpuWatts", 150); set("HibernateCountdownSeconds", 25);
+            set("HighConfirmSeconds", 17); set("RecoverySeconds", 41); set("LowConfirmSeconds", 7);
+            type.GetField("config", Private).SetValue(form, settings);
+            object capabilities = Activator.CreateInstance(originalCapabilities.GetType());
+            capabilities.GetType().GetProperty("GpuLimitSupported").SetValue(capabilities, true, null);
+            capabilities.GetType().GetProperty("GpuMinimumWatts").SetValue(capabilities, 50D, null);
+            capabilities.GetType().GetProperty("GpuMaximumWatts").SetValue(capabilities, 500D, null);
+            type.GetField("capabilities", Private).SetValue(form, capabilities);
+            Invoke(form, "LoadControls"); Invoke(form, "OnSettingsSaved");
+            rules.Enabled = true; Invoke(form, "Navigate", 1); Application.DoEvents();
+            var advanced = (Panel)field("advancedPolicyPanel");
+            var toggle = (Button)field("advancedPolicyToggle");
+            var saveBar = (Panel)field("policySaveBar");
+            Assert(!advanced.Visible, "Advanced settings must start collapsed");
+            foreach (string name in new[] { "threshold", "charge", "runtime" })
+                Assert(((Control)field(name)).Visible, "The three primary thresholds must remain visible");
+            foreach (string name in new[] { "unit", "margin", "cpu", "gpu", "countdown" })
+                Assert(!((Control)field(name)).Visible, "Detailed controls must stay inside advanced settings");
+            Assert(((Label)field("thresholdUnit")).Text == "W", "An existing watt threshold must keep its unit");
+            for (int i = 0; i < 2; i++)
+            {
+                toggle.PerformClick(); Application.DoEvents();
+                Assert(advanced.Visible && saveBar.Top >= advanced.Bottom, "Expanded controls must not overlap Save");
+                toggle.PerformClick(); Application.DoEvents();
+                Assert(!advanced.Visible && saveBar.Top == advanced.Top, "Collapsing advanced settings must close the unused space");
+            }
+            Assert((bool)Invoke(form, "SaveControls", false), "Saving while advanced settings are collapsed must succeed");
+            object saved = field("config");
+            foreach (string name in new[] { "LoadThreshold", "UsePercent", "RecoveryMargin", "CpuMaximum", "GpuWatts", "HibernateCountdownSeconds", "HighConfirmSeconds", "RecoverySeconds", "LowConfirmSeconds", "StaleSeconds" })
+                Assert(Object.Equals(settings.GetType().GetField(name).GetValue(settings), saved.GetType().GetField(name).GetValue(saved)),
+                    "Collapsing and saving must preserve " + name);
+            Assert(!(bool)saved.GetType().GetField("Armed").GetValue(saved), "Presentation changes cannot arm protection");
+            string power = ((Label)field("powerActionSummary")).Text;
+            string recovery = ((Label)field("ruleSummary")).Text;
+            string battery = ((Label)field("batteryRuleSummary")).Text;
+            Assert(power.Contains("37") && power.Contains("150"), "Action preview must expose the configured CPU and GPU limits");
+            Assert(recovery.Contains("700") && recovery.Contains("41"), "Recovery preview must use the actual threshold and delay");
+            Assert(battery.Contains("7") && battery.Contains("25"), "Battery preview must use the actual confirmation and countdown");
+
+            Invoke(form, "Navigate", 0);
+            var chart = (Control)field("chart"); var trend = (Panel)field("trendSurface");
+            Assert(!trend.Visible, "Load history must start collapsed");
+            chart.GetType().GetMethod("Add").Invoke(chart, new object[] { DateTime.UtcNow, 123D, 650D });
+            int count = ((System.Collections.ICollection)chart.GetType().GetField("readings", Private).GetValue(chart)).Count;
+            ((Button)field("trendToggle")).PerformClick(); Assert(trend.Visible, "Load history must expand on request");
+            ((Button)field("trendToggle")).PerformClick(); Assert(!trend.Visible, "Load history must collapse on request");
+            Assert(((System.Collections.ICollection)chart.GetType().GetField("readings", Private).GetValue(chart)).Count == count,
+                "Hiding load history must not clear collected samples");
+            Invoke(form, "Notice", "Synthetic routine notice", false);
+            var noticePanel = (Panel)field("noticeSurface");
+            Assert(!noticePanel.Visible, "Routine notices must not duplicate the overview status");
+            type.GetField("importantNotice", Private).SetValue(form, true); Invoke(form, "LayoutOverview");
+            Assert(noticePanel.Visible, "Important notices must remain visible");
+        }
+        finally
+        {
+            type.GetField("config", Private).SetValue(form, originalSettings);
+            type.GetField("capabilities", Private).SetValue(form, originalCapabilities);
+            type.GetField("importantNotice", Private).SetValue(form, false);
+            type.GetField("advancedPolicyExpanded", Private).SetValue(form, false);
+            type.GetField("trendExpanded", Private).SetValue(form, false);
+            Invoke(form, "LoadControls"); Invoke(form, "OnSettingsSaved"); rules.Enabled = enabled;
+            originalSettings.GetType().GetMethod("Save").Invoke(originalSettings,
+                new object[] { type.GetProperty("ConfigPath", Private).GetValue(form, null) });
+            if (ticking) timer.Start();
+        }
+    }
+
     static void CheckGuide(Form form)
     {
         var type = form.GetType();
@@ -127,6 +207,14 @@ internal static class GuiLifecycleCheck
             using (var graphics = sidebarVersion.CreateGraphics())
                 Assert(TextRenderer.MeasureText(graphics, sidebarVersion.Text, sidebarVersion.Font).Width <= sidebarVersion.Width,
                     "Persistent version must fit in the sidebar");
+            Invoke(form, "Navigate", 1); Application.DoEvents();
+            foreach (string name in new[] { "highRuleSummary", "powerActionSummary", "ruleSummary", "batteryRuleSummary" })
+            {
+                var label = (Label)type.GetField(name, Private).GetValue(form);
+                Assert(label.GetPreferredSize(new System.Drawing.Size(label.Width, 0)).Height <= label.Height,
+                    "Policy summary must fit in the selected language: " + name);
+            }
+            Assert(!pages[1].HorizontalScroll.Visible, "Simplified policy page must not need horizontal scrolling");
             if (language > 1)
             {
                 foreach (string caption in new[] { "操作指南", "连接、保护与日常操作" })
@@ -206,7 +294,7 @@ internal static class GuiLifecycleCheck
                 form.Show();
                 Application.DoEvents();
                 Assert(tray.Visible && tray.Icon != null, "Tray must be visible with a real icon");
-                if (cycle == 0) { CheckConnectionChanges(form); CheckGuide(form); }
+                if (cycle == 0) { CheckConnectionChanges(form); CheckSimplifiedViews(form); CheckGuide(form); }
                 // The X button must only hide; callbacks and tray remain alive.
                 form.Close();
                 Assert(!form.IsDisposed && !form.Visible && tray.Visible, "Close-to-tray changed");
@@ -227,7 +315,7 @@ internal static class GuiLifecycleCheck
                 Application.DoEvents();
                 Assert(!lateCallbackRan, "Disposed form accepted a callback");
             }
-            Console.WriteLine("PASS: connection changes/reconnect reject old readings without network or actuation; language popup, persistent version, seven sidebar pages, guide layout and retained update state in seven languages; visible tray, hide/reopen, exit, direct/repeated dispose and queued callbacks (3 cycles)");
+            Console.WriteLine("PASS: collapsed policy options preserve settings and action summaries; optional load history and important notices; connection generations; language popup, version, seven sidebar pages and guide layout in seven languages; tray and lifecycle (3 cycles)");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }

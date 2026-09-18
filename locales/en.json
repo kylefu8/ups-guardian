@@ -287,5 +287,22 @@
   "等待确认 UPS": "Waiting for UPS confirmation",
   "正在发现或验证 UPS · 监测尚未开始": "Discovering or verifying a UPS · monitoring has not started",
   "保存启动设置": "Save startup settings",
-  "扫描端口": "Scan port"
+  "扫描端口": "Scan port",
+  "负载阈值": "Load threshold",
+  "启用后的动作": "Actions when enabled",
+  "高级设置": "Advanced settings",
+  "收起高级设置": "Hide advanced settings",
+  "显示负载曲线": "Show load history",
+  "收起负载曲线": "Hide load history",
+  "仅电池供电时生效": "Only while on battery",
+  "持续 {0} 秒后降低本机功耗。": "Reduce local power after {0} s above the threshold.",
+  "低于 {0}{1} 持续 {2} 秒后恢复原设置。": "Restore original settings after staying below {0}{1} for {2} s.",
+  "电池条件持续 {0} 秒，倒计时 {1} 秒后休眠；来电、条件解除或数据失效时取消。": "Confirm low battery for {0} s, then hibernate after {1} s; cancel on mains return, cleared conditions or stale data.",
+  "不控制 GPU": "GPU unchanged",
+  "GPU 上限 {0}W": "GPU cap {0} W",
+  "降功耗：CPU 最大状态上限 {0}%；{1}。": "Power reduction: CPU maximum state capped at {0}%; {1}.",
+  "电池不足时按策略休眠。": "Hibernate on low battery according to the policy.",
+  "最近更新：{0}": "Last updated: {0}",
+  "已确认的 UPS": "Confirmed UPS",
+  "更换 UPS": "Change UPS"
 }

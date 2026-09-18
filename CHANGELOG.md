@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0-beta.4
+
+- Highlight the three main protection thresholds and fold detailed settings behind Advanced settings, with visible summaries of CPU/GPU limits, recovery and hibernation timing.
+- Collapse successful UPS discovery into a confirmed-device card; changing the view alone does not scan, change targets or alter protection.
+- Simplify the overview by combining device information, hiding routine notices and making the load chart optional without discarding its history.
+
+**Upgrading:** Existing UPS selection and protection settings are preserved. High-load CPU/GPU power reduction and restoration remain available. Protection still requires manual activation after startup.
+
+Validation: 113 simulated checks, isolated WinForms tests for folded settings, discovery confirmation, language layout and lifecycle, plus local interface inspection. Actual CPU/GPU power changes and hibernation are not certified by these tests.
+
 ## 0.1.0-beta.3
 
 - Replace the language dropdown with a compact globe menu and show the current version persistently beside it, with a shortcut to Updates.

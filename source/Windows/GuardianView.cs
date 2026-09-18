@@ -20,6 +20,11 @@ namespace UpsGuardian
         readonly Label connectionBadge = new Label(), ruleSummary = new Label(), batteryRuleSummary = new Label();
         readonly Label saveState = new Label(), settingsSummary = new Label();
         readonly Label ratingWarning = new Label(), permissionLabel = new Label(), sourceLabel = new Label();
+        readonly Label thresholdUnit = new Label(), marginUnit = new Label(), highRuleSummary = new Label(), powerActionSummary = new Label();
+        Button advancedPolicyToggle, trendToggle;
+        SurfacePanel advancedPolicyPanel, trendSurface;
+        Panel policySaveBar;
+        bool advancedPolicyExpanded, trendExpanded, importantNotice;
         readonly LoadChart chart = new LoadChart();
         readonly MiniMeter loadMeter = new MiniMeter(), batteryMeter = new MiniMeter();
         readonly ListView eventList = new ListView();
@@ -58,8 +63,7 @@ namespace UpsGuardian
                 pages[i] = new Panel { Bounds = new Rectangle(248, 0, 892, 686), BackColor = canvas, AutoScroll = true, Visible = i == 0 };
                 Controls.Add(pages[i]);
             }
-            ViewLabel(sidebar, "确认后开始监测", 24, 540, 204, 26, 10, true, Color.FromArgb(123, 210, 196));
-            ViewLabel(sidebar, "关闭窗口后仍在托盘运行", 24, 572, 210, 42, 8.5F, false, Color.FromArgb(143, 162, 184));
+            ViewLabel(sidebar, "关闭窗口后仍在托盘运行", 24, 552, 210, 42, 8.5F, false, Color.FromArgb(143, 162, 184));
             var tuck = MakeButton(sidebar, "收起到托盘", 20, 630, 208, 34, Color.FromArgb(26, 43, 62), Color.FromArgb(213, 224, 238));
             tuck.Click += delegate { Hide(); };
             var quit = MakeButton(sidebar, "退出守护", 20, 674, 208, 30, navy, Color.FromArgb(143, 162, 184));
@@ -87,7 +91,7 @@ namespace UpsGuardian
             cards[3].TextAlign = ContentAlignment.MiddleRight; cards[3].BringToFront();
             var guard = Surface(page, 30, 102, 832, 92);
             state.SetBounds(20, 16, 542, 29); state.Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold); guard.Controls.Add(state);
-            protectionDescription.SetBounds(22, 53, 540, 26); protectionDescription.Font = new Font("Microsoft YaHei UI", 9F); protectionDescription.ForeColor = muted; guard.Controls.Add(protectionDescription);
+            protectionDescription.SetBounds(22, 48, 540, 40); protectionDescription.Font = new Font("Microsoft YaHei UI", 9F); protectionDescription.ForeColor = muted; guard.Controls.Add(protectionDescription);
             StyleButton(arm, "启用自动保护", 592, 26, 219, 42, teal, Color.White); guard.Controls.Add(arm);
             StyleButton(pause, "暂停并恢复限制", 592, 26, 219, 42, red, Color.White); guard.Controls.Add(pause); pause.Visible = false;
 
@@ -106,70 +110,88 @@ namespace UpsGuardian
             cards[2] = ViewLabel(remaining, "—", 17, 67, 168, 55, 24, true, ink);
             ViewLabel(remaining, "按 UPS 当前估算", 20, 136, 163, 27, 8.5F, false, muted);
 
-            var graph = Surface(page, 30, 407, 522, 191);
-            ViewLabel(graph, "负载变化 · W", 20, 15, 202, 27, 11, true, ink);
-            ViewLabel(graph, "本次会话 · 最长 10 分钟", 255, 18, 246, 23, 8.5F, false, muted).TextAlign = ContentAlignment.MiddleRight;
-            chart.Bounds = new Rectangle(17, 47, 488, 129); graph.Controls.Add(chart);
-            var device = Surface(page, 570, 407, 292, 191);
-            ViewLabel(device, "连接的 UPS", 19, 15, 258, 25, 10, true, ink);
-            modelName.SetBounds(20, 51, 251, 46); modelName.Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold); modelName.ForeColor = ink; device.Controls.Add(modelName);
-            connectionBadge.SetBounds(20, 104, 251, 28); connectionBadge.Font = new Font("Microsoft YaHei UI", 9F); connectionBadge.ForeColor = muted; device.Controls.Add(connectionBadge);
-            MakeButton(device, "管理连接  →", 16, 143, 258, 31, Color.FromArgb(239, 246, 248), teal).Click += delegate { Navigate(2); };
+            var device = Surface(page, 30, 407, 832, 116);
+            ViewLabel(device, "连接的 UPS", 20, 15, 460, 25, 10, true, ink);
+            modelName.SetBounds(20, 52, 540, 43); modelName.Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold); modelName.ForeColor = ink; device.Controls.Add(modelName);
+            connectionBadge.SetBounds(512, 15, 299, 28); connectionBadge.TextAlign = ContentAlignment.MiddleRight;
+            connectionBadge.Font = new Font("Microsoft YaHei UI", 9F); connectionBadge.ForeColor = muted; device.Controls.Add(connectionBadge);
+            MakeButton(device, "管理连接  →", 590, 61, 221, 34, Color.FromArgb(239, 246, 248), teal).Click += delegate { Navigate(2); };
+            trendToggle = MakeButton(page, "显示负载曲线", 30, 539, 832, 34, Color.White, teal);
+            trendToggle.Click += delegate { trendExpanded = !trendExpanded; LayoutOverview(); if (!trendExpanded) page.AutoScrollPosition = Point.Empty; };
+            trendSurface = Surface(page, 30, 589, 832, 191);
+            ViewLabel(trendSurface, "负载变化 · W", 20, 15, 202, 27, 11, true, ink);
+            ViewLabel(trendSurface, "本次会话 · 最长 10 分钟", 470, 18, 339, 23, 8.5F, false, muted).TextAlign = ContentAlignment.MiddleRight;
+            chart.Bounds = new Rectangle(17, 47, 798, 129); trendSurface.Controls.Add(chart);
 
-            noticeSurface = Surface(page, 30, 616, 832, 56); noticeSurface.Fill = Color.FromArgb(255, 248, 231); noticeSurface.Border = Color.FromArgb(247, 224, 172);
+            noticeSurface = Surface(page, 30, 589, 832, 56); noticeSurface.Fill = Color.FromArgb(255, 248, 231); noticeSurface.Border = Color.FromArgb(247, 224, 172);
             notice.SetBounds(17, 10, 646, 40); notice.ForeColor = Color.FromArgb(135, 93, 27); notice.Font = new Font("Microsoft YaHei UI", 9F); notice.AutoEllipsis = true; noticeSurface.Controls.Add(notice);
             MakeButton(noticeSurface, "查看策略  →", 686, 12, 126, 32, Color.FromArgb(255, 248, 231), Color.FromArgb(135, 93, 27)).Click += delegate { Navigate(1); };
+        }
+
+        void LayoutOverview()
+        {
+            if (trendSurface == null || noticeSurface == null) return;
+            trendSurface.Visible = trendExpanded;
+            trendToggle.Text = trendExpanded ? "收起负载曲线" : "显示负载曲线";
+            int gap = Math.Max(1, (int)Math.Round(trendToggle.Height * 16.0 / 34));
+            noticeSurface.Top = trendExpanded ? trendSurface.Bottom + gap : trendSurface.Top;
+            noticeSurface.Visible = importantNotice;
         }
 
         void BuildPolicies()
         {
             Panel page = pages[1];
             PageHeading(page, "保护策略", "清楚地定义：何时触发、如何处理、何时恢复");
-            rules.SetBounds(0, 96, 892, 579); rules.BackColor = canvas; page.Controls.Add(rules);
-            var load = Surface(rules, 30, 0, 832, 246);
-            ViewLabel(load, "01  负载过高时，降低本机功耗", 22, 17, 770, 31, 13, true, ink);
-            ViewLabel(load, "UPS 整体负载超过阈值，持续 5 秒后执行。", 23, 55, 782, 26, 9, false, muted);
-            ViewLabel(load, "触发阈值", 24, 98, 90, 28, 10, false, muted);
-            unit.SetBounds(125, 94, 160, 32); unit.DropDownStyle = ComboBoxStyle.DropDownList; unit.Items.AddRange(new object[] { "估算功率（W）", "负载率（%）" }); unit.AccessibleName = "负载阈值单位"; load.Controls.Add(unit);
-            Number(load, threshold, 300, 94, 105, 1, 10000, "降功耗触发阈值");
-            ViewLabel(load, "恢复回差", 464, 98, 97, 28, 10, false, muted); Number(load, margin, 570, 94, 105, 1, 1000, "恢复回差");
-            ViewLabel(load, "与阈值同单位", 690, 99, 128, 27, 8.5F, false, muted);
-            ViewLabel(load, "CPU 最大状态", 24, 151, 133, 28, 10, false, muted); Number(load, cpu, 171, 148, 89, 1, 100, "CPU 最大处理器状态"); ViewLabel(load, "%", 269, 153, 30, 26, 10, false, muted);
-            ViewLabel(load, "GPU 功率上限", 464, 151, 133, 28, 10, false, muted); Number(load, gpu, 609, 148, 92, 0, 5000, "GPU 功率上限瓦数"); ViewLabel(load, "W", 710, 153, 40, 26, 10, false, muted);
+            rules.SetBounds(0, 96, 872, 579); rules.BackColor = canvas; page.Controls.Add(rules);
+            var load = Surface(rules, 30, 0, 264, 176);
+            ViewLabel(load, "负载阈值", 20, 18, 224, 30, 13, true, ink);
+            Number(load, threshold, 24, 67, 138, 1, 10000, "降功耗触发阈值");
+            thresholdUnit.SetBounds(178, 69, 57, 30); thresholdUnit.ForeColor = muted; load.Controls.Add(thresholdUnit);
+            highRuleSummary.SetBounds(20, 114, 224, 50); highRuleSummary.Font = new Font("Microsoft YaHei UI", 9F); highRuleSummary.ForeColor = muted; load.Controls.Add(highRuleSummary);
+            var battery = Surface(rules, 314, 0, 264, 176);
+            ViewLabel(battery, "电量低于", 20, 18, 224, 30, 13, true, ink);
+            Number(battery, charge, 24, 67, 138, 1, 100, "休眠电量阈值"); ViewLabel(battery, "%", 178, 69, 57, 30, 10, false, muted);
+            var remaining = Surface(rules, 598, 0, 264, 176);
+            ViewLabel(remaining, "或续航低于", 20, 18, 224, 30, 13, true, ink);
+            Number(remaining, runtime, 24, 67, 138, 30, 3600, "休眠续航阈值秒"); ViewLabel(remaining, "秒", 178, 69, 57, 30, 10, false, muted);
+            ViewLabel(battery, "仅电池供电时生效", 20, 114, 224, 50, 9, false, muted);
+            ViewLabel(remaining, "仅电池供电时生效", 20, 114, 224, 50, 9, false, muted);
+
+            var summary = Surface(rules, 30, 192, 832, 186);
+            ViewLabel(summary, "启用后的动作", 22, 15, 780, 28, 13, true, ink);
+            powerActionSummary.SetBounds(24, 49, 784, 36); powerActionSummary.Font = new Font("Microsoft YaHei UI", 9F); powerActionSummary.ForeColor = ink; summary.Controls.Add(powerActionSummary);
+            ruleSummary.SetBounds(24, 91, 784, 35); ruleSummary.Font = new Font("Microsoft YaHei UI", 9F); ruleSummary.ForeColor = teal; summary.Controls.Add(ruleSummary);
+            batteryRuleSummary.SetBounds(24, 132, 784, 45); batteryRuleSummary.Font = new Font("Microsoft YaHei UI", 9F); batteryRuleSummary.ForeColor = muted; summary.Controls.Add(batteryRuleSummary);
+            ratingWarning.SetBounds(34, 390, 801, 44); ratingWarning.Font = new Font("Microsoft YaHei UI", 9F); ratingWarning.ForeColor = Color.FromArgb(166, 102, 28); rules.Controls.Add(ratingWarning);
+            advancedPolicyToggle = MakeButton(rules, "高级设置", 30, 446, 832, 36, Color.White, teal);
+            advancedPolicyToggle.Click += delegate { advancedPolicyExpanded = !advancedPolicyExpanded; LayoutPolicyOptions(); if (!advancedPolicyExpanded) page.AutoScrollPosition = Point.Empty; };
+            advancedPolicyPanel = Surface(rules, 30, 494, 832, 204);
+            ViewLabel(advancedPolicyPanel, "负载阈值单位", 24, 24, 155, 28, 10, false, muted);
+            unit.SetBounds(190, 20, 198, 32); unit.DropDownStyle = ComboBoxStyle.DropDownList; unit.Items.AddRange(new object[] { "估算功率（W）", "负载率（%）" }); unit.AccessibleName = "负载阈值单位"; advancedPolicyPanel.Controls.Add(unit);
+            ViewLabel(advancedPolicyPanel, "恢复回差", 430, 24, 155, 28, 10, false, muted); Number(advancedPolicyPanel, margin, 610, 20, 108, 1, 1000, "恢复回差");
+            marginUnit.SetBounds(732, 24, 75, 28); marginUnit.ForeColor = muted; advancedPolicyPanel.Controls.Add(marginUnit);
+            ViewLabel(advancedPolicyPanel, "CPU 最大状态", 24, 78, 155, 28, 10, false, muted); Number(advancedPolicyPanel, cpu, 190, 74, 108, 1, 100, "CPU 最大处理器状态"); ViewLabel(advancedPolicyPanel, "%", 310, 78, 70, 28, 10, false, muted);
+            ViewLabel(advancedPolicyPanel, "GPU 功率上限", 430, 78, 155, 28, 10, false, muted); Number(advancedPolicyPanel, gpu, 610, 74, 108, 0, 5000, "GPU 功率上限瓦数"); ViewLabel(advancedPolicyPanel, "W", 732, 78, 70, 28, 10, false, muted);
             gpu.Enabled = capabilities.GpuLimitSupported;
-            ruleSummary.SetBounds(24, 201, 776, 29); ruleSummary.Font = new Font("Microsoft YaHei UI", 9F); ruleSummary.ForeColor = teal; load.Controls.Add(ruleSummary);
-            var low = Surface(rules, 30, 262, 832, 199);
-            ViewLabel(low, "02  电池不足时，保留会话并休眠", 22, 17, 771, 31, 13, true, ink);
-            ViewLabel(low, "仅在 UPS 使用电池供电时，满足以下任意一个条件。", 23, 55, 782, 26, 9, false, muted);
-            ViewLabel(low, "电量低于", 24, 99, 94, 28, 10, false, muted); Number(low, charge, 125, 95, 83, 1, 100, "休眠电量阈值"); ViewLabel(low, "%", 218, 100, 30, 25, 10, false, muted);
-            ViewLabel(low, "或续航低于", 279, 99, 113, 28, 10, false, muted); Number(low, runtime, 397, 95, 92, 30, 3600, "休眠续航阈值秒"); ViewLabel(low, "秒", 499, 100, 30, 25, 10, false, muted);
-            ViewLabel(low, "休眠倒计时", 561, 99, 114, 28, 10, false, muted); Number(low, countdown, 681, 95, 80, 0, 120, "休眠倒计时秒"); ViewLabel(low, "秒", 771, 100, 30, 25, 10, false, muted);
-            batteryRuleSummary.SetBounds(24, 151, 783, 30); batteryRuleSummary.Font = new Font("Microsoft YaHei UI", 9F); batteryRuleSummary.ForeColor = muted; low.Controls.Add(batteryRuleSummary);
-            ratingWarning.SetBounds(34, 475, 801, 42); ratingWarning.Font = new Font("Microsoft YaHei UI", 9F); ratingWarning.ForeColor = Color.FromArgb(166, 102, 28); rules.Controls.Add(ratingWarning);
-            saveState.SetBounds(35, 535, 470, 28); saveState.Font = new Font("Microsoft YaHei UI", 9F); saveState.ForeColor = muted; rules.Controls.Add(saveState);
-            MakeButton(rules, "保存保护策略", 647, 525, 215, 42, teal, Color.White).Click += delegate { SaveControls(false); };
+            ViewLabel(advancedPolicyPanel, "休眠倒计时", 24, 132, 155, 28, 10, false, muted); Number(advancedPolicyPanel, countdown, 190, 128, 108, 0, 120, "休眠倒计时秒"); ViewLabel(advancedPolicyPanel, "秒", 310, 132, 70, 28, 10, false, muted);
+            ViewLabel(advancedPolicyPanel, "Windows 最大处理器状态，不等于 CPU 使用率或瓦数上限。", 430, 129, 378, 61, 9, false, muted);
+            policySaveBar = new Panel { Bounds = new Rectangle(30, 494, 832, 52), BackColor = canvas }; rules.Controls.Add(policySaveBar);
+            saveState.SetBounds(5, 9, 590, 38); saveState.Font = new Font("Microsoft YaHei UI", 9F); saveState.ForeColor = muted; policySaveBar.Controls.Add(saveState);
+            MakeButton(policySaveBar, "保存保护策略", 617, 0, 215, 42, teal, Color.White).Click += delegate { SaveControls(false); };
+            LayoutPolicyOptions();
             tips.SetToolTip(cpu, Localization.T("Windows 最大处理器状态，不等于 CPU 使用率或瓦数上限。"));
             tips.SetToolTip(margin, Localization.T("恢复阈值 = 触发阈值 − 回差。负载低于恢复阈值持续 30 秒后恢复原设置。"));
             tips.SetToolTip(gpu, capabilities.GpuLimitSupported ? Localization.F("GPU 功率范围为 {0}–{1}W；0 表示不控制 GPU。", capabilities.GpuMinimumWatts, capabilities.GpuMaximumWatts) : Localization.T("GPU 控制不可用，将只限制 CPU。"));
         }
 
-        void BuildConnection()
+        void LayoutPolicyOptions()
         {
-            Panel page = pages[2]; PageHeading(page, "连接与启动", "设备连接、后台运行和系统权限");
-            connection.SetBounds(0, 96, 872, 850); connection.BackColor = canvas; page.Controls.Add(connection);
-            BuildDiscoverySurface();
-            var behavior = Surface(connection, 30, 467, 832, 129);
-            ViewLabel(behavior, "后台运行", 23, 16, 780, 30, 13, true, ink);
-            autoStart.SetBounds(24, 58, 776, 28); autoStart.Text = "登录 Windows 后自动启动"; autoStart.BackColor = Color.White; behavior.Controls.Add(autoStart);
-            ViewLabel(behavior, "关闭窗口只收起到托盘。自启任务需管理员设置，初始关闭。", 25, 94, 777, 27, 9, false, muted);
-            var permissions = Surface(connection, 30, 613, 832, 161);
-            ViewLabel(permissions, "权限", 23, 17, 784, 28, 13, true, ink);
-            permissionLabel.SetBounds(24, 54, 775, 29); permissionLabel.Font = new Font("Microsoft YaHei UI", 10F); permissionLabel.ForeColor = ink; permissions.Controls.Add(permissionLabel);
-            ViewLabel(permissions, "当前版本将降功耗和休眠放在同一个保护开关内；启用该开关需管理员运行。", 24, 91, 775, 22, 9, false, muted);
-            StyleButton(admin, "以管理员身份重新打开", 535, 119, 272, 31, Color.FromArgb(234, 244, 246), teal); permissions.Controls.Add(admin);
-            settingsSummary.SetBounds(35, 806, 555, 27); settingsSummary.Font = new Font("Microsoft YaHei UI", 9F); settingsSummary.ForeColor = muted; connection.Controls.Add(settingsSummary);
-            saveConnectionSettings = MakeButton(connection, "保存启动设置", 647, 793, 215, 42, teal, Color.White);
-            saveConnectionSettings.Click += delegate { SaveControls(false); };
+            if (advancedPolicyPanel == null || policySaveBar == null) return;
+            advancedPolicyPanel.Visible = advancedPolicyExpanded;
+            advancedPolicyToggle.Text = advancedPolicyExpanded ? "收起高级设置" : "高级设置";
+            int gap = Math.Max(1, (int)Math.Round(advancedPolicyToggle.Height * 12.0 / 36));
+            policySaveBar.Top = advancedPolicyExpanded ? advancedPolicyPanel.Bottom + gap : advancedPolicyPanel.Top;
+            rules.Height = policySaveBar.Bottom + gap;
         }
 
         void BuildEvents()
@@ -211,8 +233,11 @@ namespace UpsGuardian
         void UpdateRuleDescriptions()
         {
             string suffix = unit.SelectedIndex == 1 ? "%" : "W";
-            ruleSummary.Text = "负载回落到 " + (threshold.Value - margin.Value) + suffix + " 以下并持续 30 秒后，恢复本机原设置。";
-            batteryRuleSummary.Text = "条件持续 5 秒后倒计时。来电、条件解除或数据失效时取消休眠。";
+            thresholdUnit.Text = marginUnit.Text = suffix;
+            highRuleSummary.Text = Localization.F("持续 {0} 秒后降低本机功耗。", config.HighConfirmSeconds);
+            powerActionSummary.Text = PowerLimitSummary(cpu.Value, gpu.Value);
+            ruleSummary.Text = Localization.F("低于 {0}{1} 持续 {2} 秒后恢复原设置。", threshold.Value - margin.Value, suffix, config.RecoverySeconds);
+            batteryRuleSummary.Text = Localization.F("电池条件持续 {0} 秒，倒计时 {1} 秒后休眠；来电、条件解除或数据失效时取消。", config.LowConfirmSeconds, countdown.Value);
             saveState.Text = viewDirty ? "● 有未保存的更改" : "设置已保存 · 启用保护期间需先暂停再修改";
             saveState.ForeColor = viewDirty ? teal : muted;
             settingsSummary.Text = viewDirty ? "有未保存的更改" : "连接设置已保存";
@@ -220,6 +245,15 @@ namespace UpsGuardian
             bool excessive = unit.SelectedIndex == 1 ? threshold.Value > 100 : (nominal.HasValue && (double)threshold.Value > nominal.Value);
             ratingWarning.Text = excessive ? "注意：当前触发阈值高于 UPS 额定输出，可能在过载后才动作。请先确认或调整。" :
                 (!nominal.HasValue && unit.SelectedIndex == 0 ? "UPS 未提供额定功率，可使用负载率设置阈值。" : "功率为估算值；该规则只能降低本机功耗，不影响 UPS 上的其他设备。");
+            LayoutPolicyOptions(); LayoutOverview();
+            tips.SetToolTip(powerActionSummary, powerActionSummary.Text);
+            tips.SetToolTip(batteryRuleSummary, batteryRuleSummary.Text);
+            tips.SetToolTip(margin, ruleSummary.Text);
+        }
+        string PowerLimitSummary(decimal cpuLimit, decimal gpuLimit)
+        {
+            string gpuText = gpuLimit == 0 ? Localization.T("不控制 GPU") : Localization.F("GPU 上限 {0}W", gpuLimit);
+            return Localization.F("降功耗：CPU 最大状态上限 {0}%；{1}。", cpuLimit, gpuText);
         }
         void UpdatePresentation(GuardDecision decision)
         {
@@ -227,8 +261,9 @@ namespace UpsGuardian
             bool showPause = config.Armed || busy || (actions != null && actions.HasRecovery);
             arm.Visible = !showPause; pause.Visible = showPause;
             arm.Text = !connectionReady ? "发现并确认 UPS" : (elevated ? "启用自动保护" : "以管理员身份打开");
-            protectionDescription.Text = !connectionReady ? "确认唯一 UPS 后才开始监测，保护仍需手动开启。" : config.Armed ? "规则已启用，可随时暂停并恢复本机原设置。" :
-                (elevated ? "只读监测中，点击右侧按钮启用已保存的保护规则。" : "普通权限只读监测；提升权限后，仍需手动启用保护。" );
+            protectionDescription.Text = !connectionReady ? Localization.T("确认唯一 UPS 后才开始监测，保护仍需手动开启。") :
+                PowerLimitSummary(config.CpuMaximum, config.GpuWatts) + " " + Localization.T("电池不足时按策略休眠。");
+            tips.SetToolTip(protectionDescription, protectionDescription.Text);
             permissionLabel.Text = elevated ? (connectionReady ? "当前：管理员权限，可以启用自动保护。" : "当前：管理员权限，确认 UPS 后可启用保护。") : "当前：普通权限，可以连接 UPS 并查看数据。";
             admin.Visible = !elevated; admin.Enabled = !discoveryBusy && !busy && !config.Armed;
             cards[3].ForeColor = decision.Fresh ? (sample != null && sample.OnBattery ? Color.FromArgb(173, 104, 14) : teal) : muted;

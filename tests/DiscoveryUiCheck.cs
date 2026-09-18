@@ -255,8 +255,17 @@ internal static class DiscoveryUiCheck
     {
         ListView list = (ListView)GetMember(form, "discoveryList");
         Label status = (Label)GetMember(form, "discoveryStatus");
+        Panel discoverySurface = (Panel)GetMember(form, "discoverySurface");
+        Panel confirmedSurface = (Panel)GetMember(form, "confirmedSurface");
+        Panel connection = (Panel)GetMember(form, "connection");
+        Panel behavior = (Panel)GetMember(form, "connectionBehavior");
+        Panel permissions = (Panel)GetMember(form, "connectionPermissions");
+        int expandedBehaviorTop = behavior.Top;
+        int expandedPermissionsTop = permissions.Top;
+        int expandedConnectionHeight = connection.Height;
         object first = NewCandidate("192.0.2.20", 3493, "ups-confirm", "Confirmable UPS");
         int generation = (int)Invoke(form, "BeginDiscoveryOperation");
+        Assert(discoverySurface.Visible && !confirmedSurface.Visible, "Validation keeps the discovery feedback visible");
         ((System.Threading.CancellationTokenSource)GetMember(form, "discoveryCancellation")).Cancel();
         Invoke(form, "CompleteConnectionValidation", generation, first, NewSnapshot(), null, true);
         Assert(!GetBool(form, "connectionReady") && !GetBool(GetConfig(form), "ConnectionConfirmed"),
@@ -283,6 +292,7 @@ internal static class DiscoveryUiCheck
         Assert(!GetBool(form, "discoveryBusy"), "Validation failure clears the busy state");
         AssertEqual(oldHost, GetMember(config, "Host"), "Validation failure does not switch to a failed candidate");
         AssertEqual(Localized("目标验证失败，监测和保护均未启用：{0}", "synthetic validation failure"), status.Text, "Validation failure reason is visible");
+        Assert(discoverySurface.Visible && !confirmedSurface.Visible, "Validation failure does not show a connected card");
 
         generation = (int)Invoke(form, "BeginDiscoveryOperation");
         Invoke(form, "CompleteDiscovery", generation, CandidateList(first), null, false);
@@ -307,7 +317,72 @@ internal static class DiscoveryUiCheck
         Assert(!GetBool(form, "discoveryBusy"), "Successful confirmation clears the busy state");
         AssertEqual(Localized("已确认 {0}:{1} / {2}。正在只读监测，自动保护关闭。", "192.0.2.20", 3493, "ups-confirm"), status.Text, "Confirmation reports read-only monitoring");
         Assert(File.Exists(ConfigPath(form)), "Confirmation writes the settings file");
+
+        Button changeUps = (Button)GetMember(form, "changeUps");
+        Invoke(form, "Navigate", 2);
+        Pump();
+        Assert(!discoverySurface.Visible && confirmedSurface.Visible, "Successful confirmation collapses discovery into the confirmed card");
+        AssertEqual("192.0.2.20:3493", ((Label)GetMember(form, "confirmedServer")).Text, "Confirmed card shows the server");
+        AssertEqual("ups-confirm", ((Label)GetMember(form, "confirmedUpsName")).Text, "Confirmed card shows the UPS name");
+        AssertEqual(Localized("只读监测"), ((Label)GetMember(form, "confirmedState")).Text, "Confirmed card shows the monitoring state");
+        Assert(behavior.Top < expandedBehaviorTop && behavior.Top > confirmedSurface.Bottom, "Collapsed card moves the startup section up without overlap");
+        Assert(permissions.Top < expandedPermissionsTop && permissions.Top > behavior.Bottom, "Collapsed card moves the permissions section up without overlap");
+        Assert(connection.Height < expandedConnectionHeight && connection.Height >= settingsSummaryBottom(form),
+            "Collapsed connection page has no unused discovery height");
+        Panel[] pages = (Panel[])GetMember(form, "pages");
+        Assert(!pages[2].HorizontalScroll.Visible, "Collapsed connection page has no horizontal scroll");
+        using (var graphics = changeUps.CreateGraphics())
+            Assert(TextRenderer.MeasureText(graphics, changeUps.Text, changeUps.Font).Width <= changeUps.ClientSize.Width,
+                "Change button text fits in the confirmed card");
+        CheckConfirmedCardLanguages(form);
+
+        object cancellationBeforeChange = GetMember(form, "discoveryCancellation");
+        changeUps.PerformClick();
+        Pump();
+        Assert(discoverySurface.Visible && !confirmedSurface.Visible, "Changing UPS expands discovery without scanning");
+        Assert(!GetBool(form, "discoveryBusy") && !GetBool(form, "fetching"), "Changing UPS does not start a scan or poll");
+        Assert(Object.ReferenceEquals(cancellationBeforeChange, GetMember(form, "discoveryCancellation")), "Changing UPS does not replace the discovery operation");
+        Assert(GetBool(form, "connectionReady") && GetBool(config, "ConnectionConfirmed"), "Changing UPS keeps the confirmed target ready");
+        AssertEqual("192.0.2.20", GetMember(config, "Host"), "Changing UPS does not change the saved host");
+        Assert(list.Items.Count == 1, "Changing UPS keeps the existing candidate list until a new search starts");
+
+        var cancelChange = (Button)GetMember(form, "cancelDiscovery");
+        Assert(cancelChange.Enabled, "An idle change view must allow returning to the confirmed device");
+        cancelChange.PerformClick(); Pump();
+        Assert(confirmedSurface.Visible && !discoverySurface.Visible && GetBool(form, "connectionReady"),
+            "Canceling the change view keeps the current device and monitoring ready");
+        Assert(Object.ReferenceEquals(cancellationBeforeChange, GetMember(form, "discoveryCancellation")),
+            "Closing an idle change view does not cancel or create a network operation");
+
+        SetMember(form, "discoveryExpanded", false);
+        SetConfigValue(form, "Armed", true);
+        Invoke(form, "UpdateDiscoveryControls");
+        Assert(confirmedSurface.Visible && !changeUps.Enabled, "Protection disables changing UPS while keeping the card visible");
+        SetConfigValue(form, "Armed", false);
+        Invoke(form, "UpdateDiscoveryControls");
         return first;
+    }
+
+    private static int settingsSummaryBottom(Form form)
+    {
+        Control summary = (Control)GetMember(form, "settingsSummary");
+        Button save = (Button)GetMember(form, "saveConnectionSettings");
+        return Math.Max(summary.Bottom, save.Bottom);
+    }
+
+    private static void CheckConfirmedCardLanguages(Form form)
+    {
+        Button changeUps = (Button)GetMember(form, "changeUps");
+        foreach (string language in new[] { "zh-CN", "en", "ja", "ko", "fr", "de", "es" })
+        {
+            Invoke(form, "ChangeLanguage", language);
+            Pump();
+            using (var graphics = changeUps.CreateGraphics())
+                Assert(TextRenderer.MeasureText(graphics, changeUps.Text, changeUps.Font).Width <= changeUps.ClientSize.Width,
+                    "Change button text fits in " + language);
+        }
+        Invoke(form, "ChangeLanguage", "auto");
+        Pump();
     }
 
     private static void CheckReloadValidation(Assembly assembly, Form original, object candidate)

@@ -287,5 +287,22 @@
   "等待确认 UPS": "En attente de la confirmation d’un UPS",
   "正在发现或验证 UPS · 监测尚未开始": "Découverte ou vérification d’un UPS · la surveillance n’a pas commencé",
   "保存启动设置": "Enregistrer les paramètres de démarrage",
-  "扫描端口": "Port de recherche"
+  "扫描端口": "Port de recherche",
+  "负载阈值": "Seuil de charge",
+  "启用后的动作": "Actions après activation",
+  "高级设置": "Réglages avancés",
+  "收起高级设置": "Masquer les réglages avancés",
+  "显示负载曲线": "Afficher la courbe de charge",
+  "收起负载曲线": "Masquer la courbe de charge",
+  "仅电池供电时生效": "Sur batterie uniquement",
+  "持续 {0} 秒后降低本机功耗。": "Réduire la puissance de ce PC après {0} s au-dessus du seuil.",
+  "低于 {0}{1} 持续 {2} 秒后恢复原设置。": "Sous {0}{1} pendant {2} s : rétablir les réglages.",
+  "电池条件持续 {0} 秒，倒计时 {1} 秒后休眠；来电、条件解除或数据失效时取消。": "Confirmer pendant {0} s, puis hiberner après {1} s ; annuler au retour du secteur, si les conditions cessent ou si les données expirent.",
+  "不控制 GPU": "GPU non contrôlé",
+  "GPU 上限 {0}W": "GPU limité à {0} W",
+  "降功耗：CPU 最大状态上限 {0}%；{1}。": "Réduction : état maximal du CPU limité à {0} % ; {1}.",
+  "电池不足时按策略休眠。": "Hiberner si la batterie est faible, selon les règles.",
+  "最近更新：{0}": "Dernière mise à jour : {0}",
+  "已确认的 UPS": "Onduleur confirmé",
+  "更换 UPS": "Changer d’onduleur"
 }

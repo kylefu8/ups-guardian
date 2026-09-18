@@ -13,40 +13,102 @@ namespace UpsGuardian
         readonly NumericUpDown discoveryPort = new NumericUpDown();
         readonly Button scanUps = new ModernButton(), cancelDiscovery = new ModernButton(), confirmUps = new ModernButton();
         readonly Label discoveryStatus = new Label(), discoveryScope = new Label();
+        readonly Label confirmedServer = new Label(), confirmedUpsName = new Label(), confirmedState = new Label();
+        readonly Button changeUps = new ModernButton();
+        Panel discoverySurface, confirmedSurface, connectionBehavior, connectionPermissions;
         Button saveConnectionSettings;
         CancellationTokenSource discoveryCancellation;
-        bool connectionReady, discoveryBusy;
+        bool connectionReady, discoveryBusy, discoveryExpanded;
+
+        void BuildConnection()
+        {
+            Panel page = pages[2]; PageHeading(page, "连接与启动", "设备连接、后台运行和系统权限");
+            connection.SetBounds(0, 96, 872, 850); connection.BackColor = canvas; page.Controls.Add(connection);
+            BuildDiscoverySurface();
+            connectionBehavior = Surface(connection, 30, 467, 832, 129);
+            ViewLabel(connectionBehavior, "后台运行", 23, 16, 780, 30, 13, true, ink);
+            autoStart.SetBounds(24, 58, 776, 28); autoStart.Text = "登录 Windows 后自动启动"; autoStart.BackColor = Color.White; connectionBehavior.Controls.Add(autoStart);
+            ViewLabel(connectionBehavior, "关闭窗口只收起到托盘。自启任务需管理员设置，初始关闭。", 25, 94, 777, 27, 9, false, muted);
+            connectionPermissions = Surface(connection, 30, 613, 832, 161);
+            ViewLabel(connectionPermissions, "权限", 23, 17, 784, 28, 13, true, ink);
+            permissionLabel.SetBounds(24, 54, 775, 29); permissionLabel.Font = new Font("Microsoft YaHei UI", 10F); permissionLabel.ForeColor = ink; connectionPermissions.Controls.Add(permissionLabel);
+            ViewLabel(connectionPermissions, "当前版本将降功耗和休眠放在同一个保护开关内；启用该开关需管理员运行。", 24, 91, 775, 22, 9, false, muted);
+            StyleButton(admin, "以管理员身份重新打开", 535, 119, 272, 31, Color.FromArgb(234, 244, 246), teal); connectionPermissions.Controls.Add(admin);
+            settingsSummary.SetBounds(35, 806, 555, 27); settingsSummary.Font = new Font("Microsoft YaHei UI", 9F); settingsSummary.ForeColor = muted; connection.Controls.Add(settingsSummary);
+            saveConnectionSettings = MakeButton(connection, "保存启动设置", 647, 793, 215, 42, teal, Color.White);
+            saveConnectionSettings.Click += delegate { SaveControls(false); };
+            UpdateDiscoveryControls();
+        }
 
         void BuildDiscoverySurface()
         {
-            var surface = Surface(connection, 30, 0, 832, 451);
-            ViewLabel(surface, "发现局域网 UPS", 23, 18, 520, 28, 13, true, ink);
-            ViewLabel(surface, "扫描端口", 560, 23, 120, 24, 9, false, muted);
-            Number(surface, discoveryPort, 697, 20, 110, 1, 65535, "扫描端口"); discoveryPort.Value = config.Port;
-            ViewLabel(surface, "先搜索，再选择并确认一台 UPS。确认后只开始监测，保护仍需手动开启。", 24, 53, 780, 34, 9, false, muted);
+            discoverySurface = Surface(connection, 30, 0, 832, 451);
+            ViewLabel(discoverySurface, "发现局域网 UPS", 23, 18, 520, 28, 13, true, ink);
+            ViewLabel(discoverySurface, "扫描端口", 560, 23, 120, 24, 9, false, muted);
+            Number(discoverySurface, discoveryPort, 697, 20, 110, 1, 65535, "扫描端口"); discoveryPort.Value = config.Port;
+            ViewLabel(discoverySurface, "先搜索，再选择并确认一台 UPS。确认后只开始监测，保护仍需手动开启。", 24, 53, 780, 34, 9, false, muted);
             StyleButton(scanUps, "搜索局域网", 24, 96, 225, 36, teal, Color.White);
             StyleButton(cancelDiscovery, "取消搜索", 265, 96, 180, 36, Color.White, ink);
             StyleButton(confirmUps, "确认并连接所选 UPS", 487, 96, 320, 36, blue, Color.White);
-            surface.Controls.Add(scanUps); surface.Controls.Add(cancelDiscovery); surface.Controls.Add(confirmUps);
+            discoverySurface.Controls.Add(scanUps); discoverySurface.Controls.Add(cancelDiscovery); discoverySurface.Controls.Add(confirmUps);
             scanUps.Click += delegate { StartDiscovery(); };
-            cancelDiscovery.Click += delegate { if (discoveryCancellation != null) discoveryCancellation.Cancel(); };
+            cancelDiscovery.Click += delegate {
+                if (discoveryBusy) { if (discoveryCancellation != null) discoveryCancellation.Cancel(); }
+                else if (connectionReady) { discoveryExpanded = false; UpdateDiscoveryControls(); }
+            };
             confirmUps.Click += delegate { ConfirmDiscoveredUps(); };
             discoveryScope.SetBounds(24, 142, 783, 22); discoveryScope.Font = new Font("Microsoft YaHei UI", 8.5F); discoveryScope.ForeColor = muted;
             discoveryStatus.SetBounds(24, 169, 783, 34); discoveryStatus.Font = new Font("Microsoft YaHei UI", 9F); discoveryStatus.ForeColor = ink;
             discoveryStatus.Text = "尚未确认 UPS，监测和保护均未启用。";
-            surface.Controls.Add(discoveryScope); surface.Controls.Add(discoveryStatus);
+            discoverySurface.Controls.Add(discoveryScope); discoverySurface.Controls.Add(discoveryStatus);
             discoveryList.SetBounds(24, 211, 783, 144); discoveryList.View = View.Details;
             discoveryList.FullRowSelect = true; discoveryList.MultiSelect = false; discoveryList.HideSelection = false;
             discoveryList.HeaderStyle = ColumnHeaderStyle.Nonclickable; discoveryList.AccessibleName = "发现的 UPS（只能选择一台）";
             discoveryList.Columns.Add("服务器地址", 230); discoveryList.Columns.Add("设备名称", 175); discoveryList.Columns.Add("设备描述", 350);
             discoveryList.SelectedIndexChanged += delegate { UpdateDiscoveryControls(); };
-            surface.Controls.Add(discoveryList);
-            ViewLabel(surface, "服务器地址", 24, 365, 329, 24, 9, false, muted);
-            host.SetBounds(24, 397, 329, 31); host.ReadOnly = true; host.AccessibleName = "已选择的 UPS 服务器"; surface.Controls.Add(host);
-            ViewLabel(surface, "端口", 378, 365, 137, 24, 9, false, muted);
-            Number(surface, port, 378, 397, 137, 1, 65535, "NUT 端口"); port.Enabled = false;
-            ViewLabel(surface, "设备名称", 542, 365, 265, 24, 9, false, muted);
-            upsName.SetBounds(542, 397, 265, 31); upsName.ReadOnly = true; upsName.AccessibleName = "已选择的 UPS 设备"; surface.Controls.Add(upsName);
+            discoverySurface.Controls.Add(discoveryList);
+            ViewLabel(discoverySurface, "服务器地址", 24, 365, 329, 24, 9, false, muted);
+            host.SetBounds(24, 397, 329, 31); host.ReadOnly = true; host.AccessibleName = "已选择的 UPS 服务器"; discoverySurface.Controls.Add(host);
+            ViewLabel(discoverySurface, "端口", 378, 365, 137, 24, 9, false, muted);
+            Number(discoverySurface, port, 378, 397, 137, 1, 65535, "NUT 端口"); port.Enabled = false;
+            ViewLabel(discoverySurface, "设备名称", 542, 365, 265, 24, 9, false, muted);
+            upsName.SetBounds(542, 397, 265, 31); upsName.ReadOnly = true; upsName.AccessibleName = "已选择的 UPS 设备"; discoverySurface.Controls.Add(upsName);
+            BuildConfirmedSurface();
+            UpdateDiscoveryControls();
+        }
+
+        void BuildConfirmedSurface()
+        {
+            confirmedSurface = Surface(connection, 30, 0, 832, 171);
+            ViewLabel(confirmedSurface, "已确认的 UPS", 23, 18, 520, 28, 13, true, ink);
+            ViewLabel(confirmedSurface, "服务器地址", 24, 57, 150, 24, 9, false, muted);
+            confirmedServer.SetBounds(24, 80, 350, 30); confirmedServer.Font = new Font("Segoe UI", 10F, FontStyle.Bold); confirmedServer.ForeColor = ink; confirmedServer.AutoEllipsis = true; confirmedSurface.Controls.Add(confirmedServer);
+            ViewLabel(confirmedSurface, "设备名称", 400, 57, 170, 24, 9, false, muted);
+            confirmedUpsName.SetBounds(400, 80, 190, 30); confirmedUpsName.Font = new Font("Segoe UI", 10F, FontStyle.Bold); confirmedUpsName.ForeColor = ink; confirmedUpsName.AutoEllipsis = true; confirmedSurface.Controls.Add(confirmedUpsName);
+            confirmedState.SetBounds(24, 122, 350, 25); confirmedState.Font = new Font("Microsoft YaHei UI", 9F); confirmedState.ForeColor = teal; confirmedState.AutoEllipsis = true; confirmedSurface.Controls.Add(confirmedState);
+            StyleButton(changeUps, "更换 UPS", 622, 105, 185, 40, Color.White, ink); confirmedSurface.Controls.Add(changeUps);
+            changeUps.Click += delegate { ExpandDiscovery(); };
+            confirmedSurface.Visible = false;
+        }
+
+        void UpdateConnectionLayout(bool confirmed)
+        {
+            if (connectionBehavior == null || connectionPermissions == null)
+                return;
+            // Derive positions from the live scaled controls, not cached pixels.
+            int gap = Math.Max(1, (int)Math.Round(discoverySurface.Width * 16.0 / 832));
+            connectionBehavior.Top = (confirmed ? confirmedSurface.Bottom : discoverySurface.Bottom) + gap;
+            connectionPermissions.Top = connectionBehavior.Bottom + gap;
+            saveConnectionSettings.Top = connectionPermissions.Bottom + gap;
+            settingsSummary.Top = saveConnectionSettings.Top + Math.Max(0, (saveConnectionSettings.Height - settingsSummary.Height) / 2);
+            connection.Height = Math.Max(settingsSummary.Bottom, saveConnectionSettings.Bottom) + gap;
+        }
+
+        void ExpandDiscovery()
+        {
+            if (config.Armed || busy || updateBusy || (actions != null && actions.HasRecovery))
+                return;
+            discoveryExpanded = true;
             UpdateDiscoveryControls();
         }
 
@@ -61,13 +123,26 @@ namespace UpsGuardian
         void UpdateDiscoveryControls()
         {
             bool available = !config.Armed && !busy && !updateBusy && (actions == null || !actions.HasRecovery);
+            bool showConfirmed = connectionReady && config.ConnectionConfirmed && !discoveryBusy && !discoveryExpanded;
+            if (discoverySurface != null) discoverySurface.Visible = !showConfirmed;
+            if (confirmedSurface != null) confirmedSurface.Visible = showConfirmed;
+            if (confirmedServer != null)
+            {
+                confirmedServer.Text = config.Host + ":" + config.Port;
+                confirmedUpsName.Text = config.UpsName;
+                confirmedState.Text = !connectionReady ? "等待确认 UPS" :
+                    (sample != null && (sample.ReceivedUtc > DateTime.UtcNow || (DateTime.UtcNow - sample.ReceivedUtc).TotalSeconds > config.StaleSeconds)
+                        ? "数据已失效" : (config.Armed ? "保护已启用" : "只读监测"));
+            }
+            UpdateConnectionLayout(showConfirmed);
             scanUps.Enabled = available && !discoveryBusy;
             confirmUps.Enabled = available && !discoveryBusy && discoveryList.SelectedItems.Count == 1;
-            cancelDiscovery.Enabled = discoveryBusy;
+            cancelDiscovery.Enabled = discoveryBusy || (connectionReady && discoveryExpanded);
             discoveryList.Enabled = available && !discoveryBusy;
             discoveryPort.Enabled = available && !discoveryBusy;
             autoStart.Enabled = !discoveryBusy;
             if (saveConnectionSettings != null) saveConnectionSettings.Enabled = !discoveryBusy;
+            changeUps.Enabled = available && !discoveryBusy && connectionReady;
             tips.SetToolTip(discoveryStatus, discoveryStatus.Text);
         }
 
@@ -75,7 +150,7 @@ namespace UpsGuardian
         {
             if (discoveryCancellation != null) discoveryCancellation.Dispose();
             discoveryCancellation = new CancellationTokenSource();
-            discoveryBusy = true; connectionReady = false; config.Armed = false;
+            discoveryExpanded = true; discoveryBusy = true; connectionReady = false; config.Armed = false;
             sample = null; logic.Reset(); connectionGeneration++; nextPoll = DateTime.MinValue;
             UpdateDiscoveryControls();
             return connectionGeneration;
@@ -179,6 +254,7 @@ namespace UpsGuardian
                     if (!updated.ConnectionConfirmed || updated.Host != candidate.Host || updated.Port != candidate.Port || updated.UpsName != candidate.UpsName)
                         throw new InvalidOperationException(Localization.T("请先选择并确认一台 UPS。"));
                     updated.Armed = false; updated.Save(ConfigPath); config = updated;
+                    discoveryExpanded = false;
                     sample = received; connectionReady = true; nextPoll = DateTime.UtcNow.AddSeconds(2); lastError = "";
                     LoadControls(); OnSettingsSaved();
                     discoveryStatus.Text = Localization.F("已确认 {0}:{1} / {2}。正在只读监测，自动保护关闭。", config.Host, config.Port, config.UpsName);

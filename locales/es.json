@@ -287,5 +287,22 @@
   "等待确认 UPS": "Esperando la confirmación de un SAI",
   "正在发现或验证 UPS · 监测尚未开始": "Buscando o verificando un SAI · la supervisión aún no comienza",
   "保存启动设置": "Guardar ajustes de inicio",
-  "扫描端口": "Puerto de búsqueda"
+  "扫描端口": "Puerto de búsqueda",
+  "负载阈值": "Umbral de carga",
+  "启用后的动作": "Acciones al activar",
+  "高级设置": "Ajustes avanzados",
+  "收起高级设置": "Ocultar ajustes avanzados",
+  "显示负载曲线": "Mostrar la curva de carga",
+  "收起负载曲线": "Ocultar la curva de carga",
+  "仅电池供电时生效": "Solo con batería",
+  "持续 {0} 秒后降低本机功耗。": "Reducir la potencia de este PC tras {0} s por encima del umbral.",
+  "低于 {0}{1} 持续 {2} 秒后恢复原设置。": "Por debajo de {0}{1} durante {2} s: restaurar los ajustes.",
+  "电池条件持续 {0} 秒，倒计时 {1} 秒后休眠；来电、条件解除或数据失效时取消。": "Confirmar durante {0} s y luego hibernar tras {1} s; cancelar si vuelve la red, cesan las condiciones o caducan los datos.",
+  "不控制 GPU": "Sin control de GPU",
+  "GPU 上限 {0}W": "Límite de GPU: {0} W",
+  "降功耗：CPU 最大状态上限 {0}%；{1}。": "Reducción: estado máximo de CPU limitado al {0} %; {1}.",
+  "电池不足时按策略休眠。": "Hibernar según las reglas cuando la batería sea baja.",
+  "最近更新：{0}": "Última actualización: {0}",
+  "已确认的 UPS": "SAI confirmado",
+  "更换 UPS": "Cambiar SAI"
 }
