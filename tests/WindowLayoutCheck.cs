@@ -11,6 +11,10 @@ internal static class WindowLayoutCheck
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     [DllImport("user32.dll")]
     static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+    [StructLayout(LayoutKind.Sequential)]
+    struct NativeRectangle { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")]
+    static extern bool GetClientRect(IntPtr window, out NativeRectangle rectangle);
     static Form form;
     static Type type;
     static object Field(string name) { return type.GetField(name, Private).GetValue(form); }
@@ -42,8 +46,15 @@ internal static class WindowLayoutCheck
 
     static void CheckSize(Size size)
     {
-        form.ClientSize = size;
+        // Resize the native outer window, as dragging does. Setting ClientSize
+        // beyond the desktop's maximum tracking size can leave WinForms reporting
+        // the requested client size even though Windows constrained the HWND.
+        Size frame = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
+        form.Size = new Size(size.Width + frame.Width, size.Height + frame.Height);
         Application.DoEvents();
+        NativeRectangle actual;
+        Assert(GetClientRect(form.Handle, out actual) && new Size(actual.Right, actual.Bottom) == form.ClientSize,
+            "Managed client dimensions differ from the actual native window");
         var pages = (Panel[])Field("pages");
         var sidebar = (Panel)Field("sidebarViewport");
         var content = (Panel)Field("sidebarContent");
