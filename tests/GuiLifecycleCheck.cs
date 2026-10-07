@@ -294,7 +294,14 @@ internal static class GuiLifecycleCheck
                 form.Show();
                 Application.DoEvents();
                 Assert(tray.Visible && tray.Icon != null, "Tray must be visible with a real icon");
-                if (cycle == 0) { CheckConnectionChanges(form); CheckSimplifiedViews(form); CheckGuide(form); }
+                if (cycle == 0)
+                {
+                    // These assertions cover the designed desktop layout. Startup
+                    // may now fit a smaller CI display; WindowLayoutCheck covers it.
+                    form.ClientSize = new System.Drawing.Size(1140, 724);
+                    Application.DoEvents();
+                    CheckConnectionChanges(form); CheckSimplifiedViews(form); CheckGuide(form);
+                }
                 // The X button must only hide; callbacks and tray remain alive.
                 form.Close();
                 Assert(!form.IsDisposed && !form.Visible && tray.Visible, "Close-to-tray changed");
