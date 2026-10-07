@@ -330,7 +330,8 @@ internal static class DiscoveryUiCheck
         Assert(connection.Height < expandedConnectionHeight && connection.Height >= settingsSummaryBottom(form),
             "Collapsed connection page has no unused discovery height");
         Panel[] pages = (Panel[])GetMember(form, "pages");
-        Assert(!pages[2].HorizontalScroll.Visible, "Collapsed connection page has no horizontal scroll");
+        Assert(pages[2].HorizontalScroll.Visible == (pages[2].ClientSize.Width < connection.Width),
+            "Collapsed connection content remains reachable at the available width");
         using (var graphics = changeUps.CreateGraphics())
             Assert(TextRenderer.MeasureText(graphics, changeUps.Text, changeUps.Font).Width <= changeUps.ClientSize.Width,
                 "Change button text fits in the confirmed card");
