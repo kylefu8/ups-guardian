@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-beta.6
+
+- 修复屏幕分辨率降低后窗口内容被裁切的问题：支持拖动边框调整大小和最大化，页面与侧栏在空间不足时可滚动，窗口会适应当前屏幕的可用区域。
+- Fix cropped content after display resolution changes: allow resizing and maximizing, scroll pages and navigation when space is limited, and keep the window within the current screen's working area.
+
+验证 / Validation: native resize-border checks, seven-page scroll reachability, three languages, simulated 150% layout and display/work-area messages, plus the existing simulated and WinForms suites. A live display-resolution switch has not been tested.
+
 ## 0.1.0-beta.5
 
 ### English

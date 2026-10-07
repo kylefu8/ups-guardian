@@ -41,14 +41,17 @@ namespace UpsGuardian
             SuspendLayout();
             Text = "UPS 守护"; Font = new Font("Microsoft YaHei UI", 10F); ForeColor = ink; BackColor = canvas;
             AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(1140, 724); FormBorderStyle = FormBorderStyle.FixedSingle;
-            MaximizeBox = false; StartPosition = FormStartPosition.CenterScreen; DoubleBuffered = true;
+            ClientSize = new Size(1140, 724); FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = true; StartPosition = FormStartPosition.CenterScreen; DoubleBuffered = true;
             using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Guardian.Icon"))
                 if (stream != null) { using (var icon = new Icon(stream)) brandIcon = (Icon)icon.Clone(); Icon = brandIcon; }
             using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Guardian.Image"))
                 if (stream != null) { using (Image image = Image.FromStream(stream)) brandImage = new Bitmap(image); }
 
-            var sidebar = new Panel { Dock = DockStyle.Left, Width = 248, BackColor = navy }; Controls.Add(sidebar);
+            sidebarViewport = new Panel { Bounds = new Rectangle(0, 0, 248, 724), BackColor = navy, AutoScroll = true };
+            sidebarContent = new Panel { Size = new Size(248, 724), BackColor = navy };
+            sidebarViewport.Controls.Add(sidebarContent); Controls.Add(sidebarViewport);
+            Panel sidebar = sidebarContent;
             if (brandImage != null) sidebar.Controls.Add(new PictureBox { Image = brandImage, Bounds = new Rectangle(22, 28, 43, 43), SizeMode = PictureBoxSizeMode.Zoom });
             ViewLabel(sidebar, "UPS 守护", 76, 27, 168, 29, 16, true, Color.White);
             ViewLabel(sidebar, "本地电源保护", 77, 59, 168, 22, 8, false, Color.FromArgb(143, 162, 184));
@@ -68,9 +71,11 @@ namespace UpsGuardian
             tuck.Click += delegate { Hide(); };
             var quit = MakeButton(sidebar, "退出守护", 20, 674, 208, 30, navy, Color.FromArgb(143, 162, 184));
             quit.Click += delegate { Pause(true); };
-            var footer = new Panel { Bounds = new Rectangle(248, 687, 892, 37), BackColor = Color.White }; Controls.Add(footer);
+            windowFooter = new Panel { Bounds = new Rectangle(248, 687, 892, 37), BackColor = Color.White }; Controls.Add(windowFooter);
+            Panel footer = windowFooter;
             detail.SetBounds(30, 9, 610, 23); detail.Font = new Font("Microsoft YaHei UI", 8.5F); detail.ForeColor = muted; footer.Controls.Add(detail);
-            ViewLabel(footer, "确认后每 2 秒更新", 658, 9, 216, 23, 8.5F, false, muted).TextAlign = ContentAlignment.MiddleRight;
+            footerRefresh = ViewLabel(footer, "确认后每 2 秒更新", 658, 9, 216, 23, 8.5F, false, muted);
+            footerRefresh.TextAlign = ContentAlignment.MiddleRight; detail.AutoEllipsis = true;
 
             BuildOverview(); BuildPolicies(); BuildConnection(); BuildEvents(); BuildExtraPages(sidebar);
             foreach (Control input in new Control[] { host, upsName, unit }) input.TextChanged += delegate { MarkViewDirty(); };
@@ -81,6 +86,7 @@ namespace UpsGuardian
             pause.Click += delegate { Pause(false); }; admin.Click += delegate { RelaunchElevated(); };
             admin.Enabled = !WindowsPowerActions.IsAdministrator();
             MakeLabelsTransparent(this); Navigate(0); ResumeLayout(false);
+            windowLayoutReady = true; PerformLayout();
         }
 
         void BuildOverview()

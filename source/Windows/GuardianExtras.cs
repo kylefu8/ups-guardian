@@ -118,7 +118,7 @@ namespace UpsGuardian
 
         Panel BuildExtraPageBody(int index, string title, string subtitle)
         {
-            Panel page = pages[index]; page.AutoScroll = false;
+            Panel page = pages[index];
             PageHeading(page, title, subtitle);
             var body = new Panel { Bounds = new Rectangle(0, 105, 892, 581), BackColor = canvas };
             page.Controls.Add(body);
@@ -126,11 +126,14 @@ namespace UpsGuardian
         }
         void BuildGuidePage()
         {
-            Panel page = BuildExtraPageBody(4, "使用说明", "连接、保护与日常操作");
+            Panel page = pages[4]; page.AutoScroll = false;
+            var heading = new Panel { Size = new Size(892, 105), Dock = DockStyle.Top, BackColor = canvas };
+            PageHeading(heading, "使用说明", "连接、保护与日常操作");
+            foreach (Control label in heading.Controls) label.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             var reading = guideReading;
             reading.Dock = DockStyle.Fill; reading.AutoScroll = true;
             reading.FlowDirection = FlowDirection.TopDown; reading.WrapContents = false; reading.Padding = new Padding(30, 0, 0, 16);
-            page.Controls.Add(reading);
+            page.Controls.Add(reading); page.Controls.Add(heading);
             foreach (string[] section in GuideContent.Sections)
             {
                 var card = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,

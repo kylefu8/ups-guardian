@@ -38,4 +38,13 @@ foreach ($uiCulture in @('en-US', 'zh-CN')) {
     if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $discoveryLog -Tail 80; throw "Discovery UI test failed: $uiCulture" }
     Write-Output "DiscoveryUiCheck ($uiCulture): $(Get-Content -LiteralPath $discoveryLog -Tail 1)"
 }
+$layoutTestDirectory = Join-Path $testDirectory ('layout-' + [Guid]::NewGuid().ToString('N'))
+& (Join-Path $projectDirectory 'build.ps1') -OutputDirectory $layoutTestDirectory
+$layoutTestExecutable = Join-Path $layoutTestDirectory 'WindowLayoutCheck.exe'
+& $compiler /nologo /target:exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$layoutTestExecutable" (Join-Path $projectDirectory 'tests\WindowLayoutCheck.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Window layout test compile failed' }
+$layoutLog = Join-Path $testDirectory 'WindowLayoutCheck.log'
+& $layoutTestExecutable *> $layoutLog
+if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $layoutLog -Tail 60; throw 'Window layout test failed' }
+Write-Output "WindowLayoutCheck: $(Get-Content -LiteralPath $layoutLog -Tail 1)"
 Write-Output 'All simulated and GUI lifecycle tests passed. No power limits or sleep operations were invoked.'

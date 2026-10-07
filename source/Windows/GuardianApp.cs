@@ -102,7 +102,7 @@ namespace UpsGuardian
             tray.ContextMenuStrip = menu; tray.Icon = brandIcon ?? SystemIcons.Shield; tray.Text = "UPS 守护 · 只读监测"; tray.Visible = true;
             tray.DoubleClick += delegate { ShowWindow(); };
         }
-        void ShowWindow() { if (closing) return; Show(); WindowState = FormWindowState.Normal; Activate(); }
+        void ShowWindow() { if (closing) return; Show(); WindowState = FormWindowState.Normal; FitWindowToScreen(); Activate(); }
         void Ui(Action action)
         {
             if (closing || IsDisposed || Disposing || !IsHandleCreated) return;
