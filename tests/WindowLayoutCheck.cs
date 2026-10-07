@@ -49,7 +49,8 @@ internal static class WindowLayoutCheck
         var content = (Panel)Field("sidebarContent");
         var footer = (Panel)Field("windowFooter");
         Assert(sidebar.Height == form.ClientSize.Height && !sidebar.HorizontalScroll.Visible, "Sidebar is clipped horizontally");
-        Assert(footer.Bottom == form.ClientSize.Height && footer.Right == form.ClientSize.Width, "Footer left the window");
+        Assert(footer.Bottom == form.ClientSize.Height && footer.Right == form.ClientSize.Width,
+            "Footer left the window; requested=" + size + "; client=" + form.ClientSize + "; footer=" + footer.Bounds + "; sidebar=" + sidebar.Bounds);
         for (int i = 0; i < pages.Length; i++)
         {
             Call("Navigate", i); Application.DoEvents();
