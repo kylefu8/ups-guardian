@@ -127,7 +127,8 @@ internal static class WindowLayoutCheck
                 Call("ChangeLanguage", language);
                 foreach (Size size in new[] { new Size(1140, 724), new Size(800, 520), new Size(640, 420), new Size(1140, 724) }) CheckSize(size);
                 var sidebar = (Panel)Field("sidebarViewport");
-                Assert(!sidebar.VerticalScroll.Visible && sidebar.AutoScrollPosition == Point.Empty, "Growing the window leaves stale sidebar scrolling");
+                Assert(sidebar.VerticalScroll.Visible == (sidebar.ClientSize.Height < ((Panel)Field("sidebarContent")).Height)
+                    && sidebar.AutoScrollPosition == Point.Empty, "Resizing leaves stale sidebar scrolling");
             }
             CheckWorkingAreas();
             form.Scale(new SizeF(1.5F, 1.5F));

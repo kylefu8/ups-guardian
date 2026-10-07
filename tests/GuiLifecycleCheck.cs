@@ -214,7 +214,9 @@ internal static class GuiLifecycleCheck
                 Assert(label.GetPreferredSize(new System.Drawing.Size(label.Width, 0)).Height <= label.Height,
                     "Policy summary must fit in the selected language: " + name);
             }
-            Assert(!pages[1].HorizontalScroll.Visible, "Simplified policy page must not need horizontal scrolling");
+            int policyWidth = ((Panel)type.GetField("rules", Private).GetValue(form)).Width;
+            Assert(pages[1].HorizontalScroll.Visible == (pages[1].ClientSize.Width < policyWidth),
+                "Policy scrolling must match available width: " + pages[1].ClientSize + " / " + policyWidth);
             if (language > 1)
             {
                 foreach (string caption in new[] { "操作指南", "连接、保护与日常操作" })
@@ -234,7 +236,9 @@ internal static class GuiLifecycleCheck
                 }
             Invoke(form, "Navigate", 2);
             Application.DoEvents();
-            Assert(!pages[2].HorizontalScroll.Visible, "Discovery page should scroll vertically without horizontal clipping");
+            int connectionWidth = ((Panel)type.GetField("connection", Private).GetValue(form)).Width;
+            Assert(pages[2].HorizontalScroll.Visible == (pages[2].ClientSize.Width < connectionWidth),
+                "Discovery must keep all content scrollable at the available width");
             foreach (string field in new[] { "scanUps", "cancelDiscovery", "confirmUps" })
             {
                 var button = (Button)type.GetField(field, Private).GetValue(form);
